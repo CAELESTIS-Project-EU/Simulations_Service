@@ -22,11 +22,10 @@
                         <br>
                         <input hidden type="text" name="user" value="{{ user.username }}"/>
                         <div class="form-group" style="align-content: center">
-                            <label class="font-weight-bold">Name of the simulation</label>
-                            <input type="text" name="name_sim" class="form-control"
-                                   placeholder="Choose a name for the simulation (or a random name will be assigned)">
-                            <small class="form-text text-muted">What's the simulation's name?</small>
-                            <br>
+                            <!--<label class="font-weight-bold">Token</label>
+                            <input type="password" name="token" class="form-control" placeholder="Enter your Token">
+                            <small class="form-text text-muted">We'll never store your token.</small>
+                            <br>-->
                             <label class="font-weight-bold">Number of nodes</label>
                             <input type="text" name="numNodes" class="form-control"
                                    placeholder="Enter the number of nodes">
@@ -36,27 +35,6 @@
                             <input type="text" name="execTime" class="form-control"
                                    placeholder="Enter the limit execution time">
                             <small class="form-text text-muted">Maximum execution time limit</small>
-
-
-                            <br>
-                            <label class="font-weight-bold">Checkpointing</label>
-                            <br>
-                            <label class="switch">
-                                <input type="checkbox" name="checkpoint_flag">
-                                <span class="slider round"></span>
-                            </label>
-                            <small class="form-text text-muted">Allows checkpointing</small>
-                            <br>
-                            <br>
-
-
-                            <label class="font-weight-bold">Auto restart for Checkpointing</label>
-                            <br>
-                            <label class="switch">
-                                <input type="checkbox" name="auto_restart">
-                                <span class="slider round"></span>
-                            </label>
-                            <small class="form-text text-muted">Allows auto restarting from the checkpoint (If you activate this flat, also the previous flag will be considered active)</small>
                             <br>
                             <label class="font-weight-bold">QOS</label>
                             <input type="text" name="qos" class="form-control"

@@ -1,0 +1,60 @@
+{% extends './dashboard.html' %}
+{% load widget_tweaks %}
+
+{% block dashboard %}
+  {% if user.is_authenticated %}
+          <div class="card" style="border-radius: 15px;">
+            <div class="card-body p-5">
+              <h2 class="text-uppercase text-center mb-5" style="text-decoration: underline;"><b>SSH connection</b></h2>
+          {% if firstCheck == "yes" %}
+                <div >
+                    <div class="alert alert-warning" role="alert">
+                        You haven't defined any machines yet!
+                    </div>
+              </div>
+          {% else %}
+            {% if checkConn == False %}
+              <div class="wrapper-create-work">
+                  <form method="post" enctype="multipart/form-data">
+                      {% csrf_token %}
+                        <select id="machineChoice" name="machineChoice" class="btn btn-secondary dropdown-toggle">
+                            {% if choice %}
+                                <option>{{ choice }}</option>
+                            {% else %}
+                                {% for m in machines %}
+                                    <option>{{ m }}</option>
+                                {% endfor %}
+                            {% endif %}
+                        </select>
+                        <br>
+                        <label class="font-weight-bold">Token</label>
+                        <input type="password" name="token" class="form-control" placeholder="Enter your Token">
+                        <small class="form-text text-muted">We'll never store your token.</small>
+                        <button type="submit"  class="btn btn-primary fa fa-plug"></button>
+                  </form>
+                </div>
+                {% else %}
+                    <div title="Some Flag" >
+                        <div class="alert alert-warning" role="alert">
+                            You are already connect with ssh!
+                        </div>
+                  </div>
+                {% endif %}
+                {% if errorConn == True %}
+                     <div title="Some Flag" >
+                        <div class="alert alert-danger" role="alert">
+                            The token is not correct!
+                        </div>
+                  </div>
+                {% endif %}
+              {% endif %}
+              </div>
+            </div>
+  {% else %}
+    <div class="wrapper">
+      <h2>CAELESTIS</h2>
+      <h4>Login and Register</h4>
+    </div>
+  {% endif %}
+{% endblock %}
+

@@ -21,10 +21,6 @@
                             <label class="font-weight-bold">WDIR</label>
                             {% render_field form.wdir type="text" class="form-control" placeholder="Insert the working directory path for the choosen machine" %}
                         </div>
-                        <div class="form-group">
-                            <label class="font-weight-bold">INSTALLATION DIRECTORY</label>
-                            {% render_field form.installDir type="text" class="form-control" placeholder="Insert the installation directory path for the choosen machine" %}
-                        </div>
                         {{ form.author.as_hidden }}
 
                         {% if flag == "yes" %}
