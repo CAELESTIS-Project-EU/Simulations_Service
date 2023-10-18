@@ -1,0 +1,46 @@
+{% extends "./home.html" %}
+
+{% block content %}
+    {% if user.is_authenticated %}
+    <section class="main-content columns is-fullwidth is-fullheight">
+        <aside class="column is-3 is-narrow-mobile is-fullheight section is-hidden-mobile">
+            <p class="menu-label is-hidden-touch">Navigation</p>
+            <ul class="menu-list">
+              <li>
+                <a href="/dashboard" class="">
+                  <span class="icon"><i class="fas fa-home"></i></span> Home
+                </a>
+              </li>
+              <li>
+                <a href="/executions" class="">
+                  <span class="icon"><i class="fas fa-cog"></i></span> Executions
+                </a>
+              </li>
+              <!--<li>
+                <a href="/create_workflow" class="">
+                  <span class="icon"><i class="fa fa-cubes"></i></span> Creation Workflow
+                </a>
+              </li>   -->
+              <li>
+                <a href="/redefine_machine" class="">
+                  <span class="icon"><i class="fa fa-server"></i></span> Machines
+                </a>
+              </li>
+              <li>
+                <a href="/ssh_keys_generation" class="">
+                  <span class="icon"><i class="fa fa-link"></i></span> SSH keys
+                </a>
+              </li>
+            </ul>
+        </aside>
+
+        <div class="section column is-9">
+                        {% block dashboard %}
+                        {% endblock %}
+        </div>
+
+    </section>
+
+    {% endif %}
+{% endblock %}
+

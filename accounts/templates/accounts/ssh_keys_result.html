@@ -1,0 +1,40 @@
+{% extends './dashboard.html' %}
+
+{% block dashboard %}
+  {% if user.is_authenticated %}
+          <div class="card" style="border-radius: 15px;">
+            <div class="card-body p-5">
+              <h2 class="text-uppercase text-center mb-5" style="text-decoration: underline;"><b>TOKEN</b></h2>
+              <div class="wrapper-create-work">
+                        <script>
+                            function copyToClipboard(element) {
+                                  var $temp = $("<input>");
+                                  $("body").append($temp);
+                                  $temp.val($(element).text()).select();
+                                  document.execCommand("copy");
+                                  $temp.remove();
+                                }
+                        </script>
+                        <button hidden id="p1" >{{token}}</button>
+                        <button class="btn btn-secondary"  onclick="copyToClipboard('#p1')" > Click to copy your token</button>
+                        <button id="p2" hidden> {{public_key}}</button>
+                        <button class="btn btn-secondary"  onclick="copyToClipboard('#p2')" > Click to copy your public key</button>
+                        <br><br>
+                        <div class="alert alert-warning" role="alert">
+                            Store the token, you will need it for running a new simulation!
+                        </div>
+                        <div class="alert alert-info" role="alert">
+                            Add the provided ssh's public key to allow the access on your machine!
+                        </div>
+                        <a href="/dashboard"><button type="button" class="btn btn-success">Continue</button></a>
+                </div>
+              </div>
+            </div>
+  {% else %}
+    <div class="wrapper">
+      <h2>CAELESTIS</h2>
+      <h4>Login and Register</h4>
+    </div>
+  {% endif %}
+{% endblock %}
+

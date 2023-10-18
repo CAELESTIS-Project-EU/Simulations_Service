@@ -1,0 +1,86 @@
+{% extends './dashboard.html' %}
+
+{% block dashboard %}
+    {% if user.is_authenticated %}
+        <div class="card" style="border-radius: 15px;">
+            <div class="card-body p-150">
+                <h2 class="text-uppercase text-center mb-5" style="text-decoration: underline;"><b>RUN YOUR
+                    SIMULATION</b></h2>
+                <div class="wrapper-create-work">
+                    <form method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        <select id="machineChoice" name="machineChoice" class="btn btn-secondary dropdown-toggle">
+                            {% if choice %}
+                                <option>{{ choice }}</option>
+                            {% else %}
+                                {% for m in machines %}
+                                    <option>{{ m }}</option>
+                                {% endfor %}
+                            {% endif %}
+                        </select>
+                        <small id="emailHelp" class="form-text text-muted">Choose the machine</small>
+                        <br>
+                        <input hidden type="text" name="user" value="{{ user.username }}"/>
+                        <div class="form-group" style="align-content: center">
+                            <label class="font-weight-bold">Name of the simulation</label>
+                            <input type="text" name="name_sim" class="form-control"
+                                   placeholder="Choose a name for the simulation (or a random name will be assigned)">
+                            <small class="form-text text-muted">What's the simulation's name?</small>
+                            <br>
+                            <label class="font-weight-bold">Number of nodes</label>
+                            <input type="text" name="numNodes" class="form-control"
+                                   placeholder="Enter the number of nodes">
+                            <small class="form-text text-muted">How many nodes do you want to execute this job?</small>
+                            <br>
+                            <label class="font-weight-bold">Execution time limit</label>
+                            <input type="text" name="execTime" class="form-control"
+                                   placeholder="Enter the limit execution time">
+                            <small class="form-text text-muted">Maximum execution time limit</small>
+
+
+                            <br>
+                            <label class="font-weight-bold">Checkpointing</label>
+                            <br>
+                            <label class="switch">
+                                <input type="checkbox" name="checkpoint_flag">
+                                <span class="slider round"></span>
+                            </label>
+                            <small class="form-text text-muted">Allows checkpointing</small>
+                            <br>
+                            <br>
+
+
+                            <label class="font-weight-bold">Auto restart for Checkpointing</label>
+                            <br>
+                            <label class="switch">
+                                <input type="checkbox" name="auto_restart">
+                                <span class="slider round"></span>
+                            </label>
+                            <small class="form-text text-muted">Allows auto restarting from the checkpoint (If you activate this flat, also the previous flag will be considered active)</small>
+                            <br>
+                            <label class="font-weight-bold">QOS</label>
+                            <input type="text" name="qos" class="form-control"
+                                   placeholder="Enter the queue you want to use">
+                            <small class="form-text text-muted">QOS (default bsc_cs)</small>
+                            <br>
+                            {{ form.as_p }}
+                        </div>
+                        <br>
+                        <button type="submit" class="btn btn-primary fa fa-play-circle"></button>
+                    </form>
+                    {% if flag == "second" %}
+                        <div class="alert alert-danger" role="alert">
+                            The provided token to decrypt your SSH keys is wrong!
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    {% else %}
+        <div class="wrapper">
+            <h2>CAELESTIS</h2>
+            <h4>Login and Register</h4>
+        </div>
+    {% endif %}
+{% endblock %}
+

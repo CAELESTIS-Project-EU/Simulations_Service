@@ -1,0 +1,80 @@
+{% extends './dashboard.html' %}
+
+{% block dashboard %}
+  {% if user.is_authenticated %}
+          <div class="card" style="border-radius: 15px;">
+            <div class="card-body p-5">
+              <h2 class="text-uppercase text-center mb-5" style="text-decoration: underline;"><b>CREATE YOUR WORKFLOW</b></h2>
+              <div class="wrapper-create-work">
+                  <script>
+                    $(document).on('click', '.addService', function(){
+                    var html = '<div><input type="text" name="myInput"></div>';
+                  $(this).parent().append(html);
+                    });
+                </script>
+                  <form method="post" enctype="multipart/form-data">
+                      {% csrf_token %}
+                      {{ form.hidden }}
+                  </form>
+                  <p class="h4" style="text-align: center">Sampler</p>
+                    <div class="dropdown">
+                      <button class="btn btn-secondary dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                        Choose your sampler
+                      </button>
+                      <div class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+                        <a class="dropdown-item" href="#">Morris</a>
+                        <a class="dropdown-item" href="#">Another action</a>
+                        <a class="dropdown-item" href="#">Something else here</a>
+                      </div>
+                    </div>
+                    <div id="contain">
+                      <div>
+                      <input type="text" name='+value+'[]>
+                      <button type="button"  class="addService btn btn-primary">+</button>
+
+                      </div>
+                    </div>
+
+                  <p class="h4" style="text-align: center">Simulation</p>
+                    <div id="contain">
+                      <div>
+                      <input type="text" name='+value+'[]>
+                      <button type="button"  class="addService btn btn-primary">+</button>
+                      </div>
+                    </div>
+
+                  <p class="h4" style="text-align: center">Sensitivity</p>
+                    <div id="contain">
+                      <div>
+                      <input type="text" name='+value+'[]>
+                      <button type="button"  class="addService btn btn-primary">+</button>
+
+                      </div>
+                    </div>
+
+                  <p class="h4" style="text-align: center">Outputs</p>
+                    <div id="contain">
+                      <div>
+                      <input type="text" name='+value+'[]>
+                      <button type="button"  class="addService btn btn-primary">+</button>
+
+                      </div>
+                    </div>
+
+                  <p class="h4" style="text-align: center">Problem</p>
+                    <div id="contain">
+                      <div>
+                      <input type="text" name='+value+'[]>
+                      <button type="button"  class="addService btn btn-primary">+</button>
+                      </div>
+                    </div>
+              </div>
+            </div>
+  {% else %}
+    <div class="wrapper">
+      <h2>CAELESTIS</h2>
+      <h4>Login and Register</h4>
+    </div>
+  {% endif %}
+{% endblock %}
+

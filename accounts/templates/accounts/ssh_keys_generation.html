@@ -1,0 +1,83 @@
+{% extends './dashboard.html' %}
+
+{% block dashboard %}
+    {% if user.is_authenticated %}
+        <div class="card" style="border-radius: 15px;">
+            <div class="card-body p-5">
+                <h2 class="text-uppercase text-center mb-5" style="text-decoration: underline;"><b>SSH keys
+                    generation</b></h2>
+                {% if firstCheck != "yes" %}
+                    <div class="wrapper-create-work">
+                        <form method="post">
+                            {% csrf_token %}
+                            <select id="machineChoice" name="machineChoice" class="btn btn-secondary dropdown-toggle">
+                                {% if choice %}
+                                    <option>{{ choice }}</option>
+                                {% else %}
+                                    {% for m in machines %}
+                                        <option>{{ m }}</option>
+                                    {% endfor %}
+                                {% endif %}
+                            </select>
+                            <small class="form-text text-muted">Choose for which machine you want to generate the SSH
+                                keys</small>
+
+                            {{ form.author.as_hidden }}
+                            {{ form.private_key.as_hidden }}
+                            {{ form.public_key.as_hidden }}
+                            {% if reuse_token == "yes" %}
+                                <div title="Some Flag">
+                                    <div class="alert alert-warning" role="alert">
+                                        By clicking the above button, you will use the same ssh keys and token for the
+                                        new machine!
+                                    </div>
+                                </div>
+                                <button type="submit" name="reuse_token_button" class="btn btn-primary">Reuse</button>
+                            {% else %}
+                                <button type="submit" class="btn btn-primary">Continue</button>
+                            {% endif %}
+
+                        </form>
+                        {% if warning == "second" %}
+                            <div title="Some Flag">
+                                <div class="alert alert-warning" role="alert">
+                                    SSH keys for this user already existed, by clicking continue new keys will be
+                                    generated and the old ones will be cancelled!
+                                </div>
+                            </div>
+                        {% elif warning == "third" %}
+
+                            <div title="Some Flag">
+                                <div class="alert alert-warning" role="alert">
+                                    You have multiple machines who are using the token you forgot, by clicking continue
+                                    new shared keys for your machines will be generated and the old ones will be
+                                    cancelled!
+                                </div>
+                            </div>
+                        {% endif %}
+
+                    </div>
+                {% else %}
+                    <div class="d-flex flex-row-reverse">
+                        <div class="p-2">
+                            <a href="/machine_definition">New machine
+                                <button type="button" class="btn btn-success fa fa-plus-circle"></button>
+                            </a>
+                        </div>
+                    </div>
+                    <div title="Some Flag">
+                        <div class="alert alert-warning" role="alert">
+                            You haven't defined any machines yet!
+                        </div>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    {% else %}
+        <div class="wrapper">
+            <h2>CAELESTIS</h2>
+            <h4>Login and Register</h4>
+        </div>
+    {% endif %}
+{% endblock %}
+
