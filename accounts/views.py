@@ -316,6 +316,21 @@ def render_right(request):
     return
 
 
+
+def deleteExecution(jobIDdelete, request):
+    ssh = connection(request.session['content'], request.session['machineID'])
+    command = "scancel " + jobIDdelete
+    stdin, stdout, stderr = ssh.exec_command(command)
+    Execution.objects.filter(jobID=jobIDdelete).delete()
+    form = ExecutionForm()
+    executions = Execution.objects.all().filter(author=request.user).filter(Q(status="PENDING") | Q(status="RUNNING"))
+    executionsDone = Execution.objects.all().filter(author=request.user, status="COMPLETED")
+    executionsFailed = Execution.objects.all().filter(author=request.user, status="FAILED")
+    executionTimeout = Execution.objects.all().filter(author=request.user, status="TIMEOUT", autorestart=False)
+    return render(request, 'accounts/executions.html',
+                  {'form': form, 'executions': executions, 'executionsDone': executionsDone,
+                   'executionsFailed': executionsFailed, 'executionsTimeout': executionTimeout})
+
 def executions(request):
     if request.method == 'POST':
         if 'resultExecution' in request.POST:
@@ -331,6 +346,10 @@ def executions(request):
         elif 'stopExecution' in request.POST:
             request.session['stopExecutionValue'] = request.POST.get("stopExecutionValue")
             stopExecution(request.POST.get("stopExecutionValue"), request)
+        elif 'deleteExecution' in request.POST:
+            request.session['deleteExecutionValue'] = request.POST.get("deleteExecutionValue")
+            deleteExecution(request.POST.get("deleteExecutionValue"), request)
+
         elif 'disconnectButton' in request.POST:
             Connection.objects.filter(idConn_id=request.session["idConn"]).update(status="Disconnect")
             print("DISCONECT PHASE")

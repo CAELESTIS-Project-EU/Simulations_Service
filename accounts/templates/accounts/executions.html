@@ -71,6 +71,7 @@
                                                 <th scope="col">Autorestart</th>
                                                 <th scope="col">Time</th>
                                                 <th></th>
+                                                <th></th>
                                             </tr>
                                             </thead>
                                             {% for e in executions %}
@@ -91,6 +92,17 @@
                                                                    name="stopExecutionValue">
                                                             <button type="submit" name="stopExecution"
                                                                     class="btn btn-primary">STOP
+                                                            </button>
+
+                                                        </form>
+                                                    </td>
+                                                    <td>
+                                                        <form method="POST">
+                                                            {% csrf_token %}
+                                                            <input hidden value="{{ e.jobID }}"
+                                                                   name="deleteExecutionValue">
+                                                            <button type="submit" name="deleteExecution"
+                                                                    class="btn btn-primary fa fa-trash">
                                                             </button>
                                                         </form>
                                                     </td>
@@ -118,6 +130,7 @@
                                                 <th scope="col">Status</th>
                                                 <th scope="col">Autorestart</th>
                                                 <th scope="col">Time</th>
+                                                <th scope="col"></th>
                                             </tr>
                                             </thead>
                                             {% for e in executionsDone %}
@@ -138,6 +151,16 @@
                                                     <td>{{ e.status }}</td>
                                                     <td>{{ e.autorestart }}</td>
                                                     <td>{{ e.time }}</td>
+                                                    <td>
+                                                        <form method="POST">
+                                                            {% csrf_token %}
+                                                            <input hidden value="{{ e.jobID }}"
+                                                                   name="deleteExecutionValue">
+                                                            <button type="submit" name="deleteExecution"
+                                                                    class="btn btn-primary fa fa-trash">
+                                                            </button>
+                                                        </form>
+                                                    </td>
                                                 </tr>
 
                                                 </tbody>
@@ -163,6 +186,7 @@
                                                 <th scope="col">Status</th>
                                                 <th scope="col">Autorestart</th>
                                                 <th scope="col">Time</th>
+                                                <th scope="col"></th>
                                             </tr>
                                             </thead>
                                             {% for e in executionsTimeout %}
@@ -183,6 +207,16 @@
                                                     <td>{{ e.status }}</td>
                                                     <td>{{ e.autorestart }}</td>
                                                     <td>{{ e.time }}</td>
+                                                    <td>
+                                                        <form method="POST">
+                                                            {% csrf_token %}
+                                                            <input hidden value="{{ e.jobID }}"
+                                                                   name="deleteExecutionValue">
+                                                            <button type="submit" name="deleteExecution"
+                                                                    class="btn btn-primary fa fa-trash">
+                                                            </button>
+                                                        </form>
+                                                    </td>
                                                 </tr>
 
                                                 </tbody>
@@ -207,6 +241,7 @@
                                                 <th scope="col">Status</th>
                                                 <th scope="col">Autorestart</th>
                                                 <th scope="col">Time</th>
+                                                <th scope="col"></th>
                                             </tr>
                                             </thead>
                                             {% for e in executionsFailed %}
@@ -227,6 +262,16 @@
                                                     <td>{{ e.status }}</td>
                                                     <td>{{ e.autorestart }}</td>
                                                     <td>{{ e.time }}</td>
+                                                    <td>
+                                                        <form method="POST">
+                                                            {% csrf_token %}
+                                                            <input hidden value="{{ e.jobID }}"
+                                                                   name="deleteExecutionValue">
+                                                            <button type="submit" name="deleteExecution"
+                                                                    class="btn btn-primary fa fa-trash">
+                                                            </button>
+                                                        </form>
+                                                    </td>
                                                 </tr>
                                                 </tbody>
                                             {% endfor %}
@@ -245,7 +290,6 @@
                                                     class="btn btn-primary">DISCONNECT
                                             </button>
                                         </form>
-
                                     </div>
                                 </div>
                             </div>
