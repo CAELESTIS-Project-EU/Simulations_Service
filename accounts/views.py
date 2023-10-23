@@ -95,46 +95,60 @@ def extract_substring(s):
 
 
 def scp_upload_folder(local_path, remote_path, content, machineID):
-    ssh = paramiko.SSHClient()
-    pkey = paramiko.RSAKey.from_private_key(StringIO(content))
-    machine_found = Machine.objects.get(id=machineID)
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(machine_found.fqdn, username=machine_found.user, pkey=pkey)
-    sftp = ssh.open_sftp()
-    try:
-        # Create the remote directory if it doesn't exist
+    res= get_github_code()
+    if res:
+        ssh = paramiko.SSHClient()
+        pkey = paramiko.RSAKey.from_private_key(StringIO(content))
+        machine_found = Machine.objects.get(id=machineID)
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(machine_found.fqdn, username=machine_found.user, pkey=pkey)
+        sftp = ssh.open_sftp()
         try:
-            sftp.stat(remote_path)
-        except FileNotFoundError:
-            sftp.mkdir(remote_path)
-        # Recursively upload the local  folder and its contents
-        for root, dirs, files in os.walk(local_path):
-            remote_dir = os.path.join(remote_path, os.path.relpath(root, local_path))
-
-            # Create remote directories as needed
+            # Create the remote directory if it doesn't exist
             try:
-                sftp.stat(remote_dir)
+                sftp.stat(remote_path)
             except FileNotFoundError:
-                sftp.mkdir(remote_dir)
-            for file in files:
-                local_file = os.path.join(root, file)
-                remote_file = os.path.join(remote_dir, file)
-                sftp.put(local_file, remote_file)
+                sftp.mkdir(remote_path)
+            # Recursively upload the local  folder and its contents
+            for root, dirs, files in os.walk(local_path):
+                remote_dir = os.path.join(remote_path, os.path.relpath(root, local_path))
 
-        sftp.close()
-    except Exception as e:
-        print(f"Error: {e}")
+                # Create remote directories as needed
+                try:
+                    sftp.stat(remote_dir)
+                except FileNotFoundError:
+                    sftp.mkdir(remote_dir)
+                for file in files:
+                    local_file = os.path.join(root, file)
+                    remote_file = os.path.join(remote_dir, file)
+                    sftp.put(local_file, remote_file)
+
+            sftp.close()
+        except Exception as e:
+            print(f"Error: {e}")
+    else:
+        log.info("The code is already up to date! No git clone needed!")
 
 
 def get_github_code():
     script_path = '/var/www/API_REST/gitClone.sh'
     try:
-        subprocess.run(['bash', script_path], check=True)
+        #subprocess.run(['bash', script_path], check=True)
+        result = subprocess.run([script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        # Check the output
+        if "Changes detected. Pulling latest changes..." in result.stdout:
+            print("Changes were detected and pulled. Doing other things...")
+            return True
+        else:
+            print("No changes detected or there was an error.")
+            if result.stderr:
+                print("Error:", result.stderr)
+
     except subprocess.CalledProcessError as e:
         log.info(f"Script execution failed with error code {e.returncode}: {e.stderr.decode('utf-8')}")
     except FileNotFoundError:
         log.info(f"Error: The script '{script_path}' was not found.")
-    return
+    return False
 
 
 def delete_github_code():
@@ -181,9 +195,6 @@ def run_sim(request):
             workflow = read_and_write(name)
             user = request.user
             userMachine = machine_found.user
-            log.info("CONNECTION INSIDE RUN_SIM")
-            log.info(request.session["content"])
-            log.info("MACHINE ID:" + str(request.session["machineID"]))
             ssh = connection(request.session["content"], request.session["machineID"])
             request.session["connection_machine"] = machineID
             workflow_name = workflow.get("workflow_type")
@@ -221,13 +232,11 @@ def run_sim(request):
             qos = request.POST.get('qos')
             path_install_dir = machine_found.installDir
             param_machine = remove_numbers(machine_found.fqdn)
-            workflow_name = str(workflow_name)
 
-            # Example usage
             local_folder = "/home/ubuntu/installDir"
-            get_github_code()
+
             scp_upload_folder(local_folder, path_install_dir, request.session["content"], machineID)
-            delete_github_code()
+            #delete_github_code()
 
             if checkpoint_bool:
                 cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; mkdir -p " + execution_folder + "; cd " + machine_found.installDir + "/scripts/" + machine_folder + "/;  source app-checkpoint.sh " + userMachine + " " + str(
@@ -375,7 +384,6 @@ def executions(request):
             try:
                 try:
                     content = decrypt(private_key, request.POST.get("token")).decode()
-                    log.info(content)
                 except Exception:
                     form = ExecutionForm()
                     machines_done = populate_executions_machines(request)
@@ -529,14 +537,11 @@ def update_table(token, machine, request):
         try:
             content = decrypt(private_key, token).decode()
         except Exception:
-            log.info("ERRORRRRR 2 ")
             return redirect('accounts:executions', {"errorToken":'yes'})
         request.session["content"] = content
     except:
-        log.info("ERROR 1")
-        print("The token is wrong!")
+        log.info("The token is wrong!")
         return redirect('accounts:executions', {"errorToken": 'yes'})
-    log.info("UPDATE TABLE EXECUTIONS")
     ssh = connection(content, machineID)
     executions = Execution.objects.all().filter(author=request.user)
     for executionE in executions:
@@ -551,22 +556,12 @@ def update_table(token, machine, request):
 
 def connection(content, machineID):
     try:
-        # log.info("CONNECTION STEP 0, CONTENT:" + str(content))
         ssh = paramiko.SSHClient()
-        # log.info("CONNECTION STEP 1")
         pkey = paramiko.RSAKey.from_private_key(StringIO(content))
-        # log.info("CONNECTION STEP 2")
         machine_found = Machine.objects.get(id=machineID)
-        # log.info("CONNECTION STEP 3, MACHINE ID:"+str(machineID))
-        # log.info("CONNECTION STEP 4, PKEY:" + str(pkey))
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh.connect(machine_found.fqdn, username=machine_found.user, pkey=pkey)
-
-        # log.info("CONNECTION STEP 5, DONE")
     except:
-        log.info("ERROR CONNECTION")
-        log.info("CONNECTION STEP 3, MACHINE ID:" + str(machineID))
-        log.info("CONNECTION , PKEY:" + str(content))
         return redirect('accounts:executions', {"errorToken":'yes'})
     return ssh
 
