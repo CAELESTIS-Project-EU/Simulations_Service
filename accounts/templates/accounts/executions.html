@@ -29,6 +29,13 @@
                                 <button type="submit" name="connection" class="btn btn-primary fa fa-plug"></button>
                             </form>
                         </div>
+                        {% if errorToken == "yes" %}
+                            <div title="Some Flag">
+                                <div class="alert alert-danger" role="alert">
+                                    Provided token is wrong!
+                                </div>
+                            </div>
+                        {% endif %}
                     {% else %}
                         <h2 class="text-uppercase text-center mb-5" style="text-decoration: underline;">
                             <b>EXECUTIONS</b>
@@ -61,6 +68,7 @@
                                                 <th scope="col">User</th>
                                                 <th scope="col">Nodes</th>
                                                 <th scope="col">Status</th>
+                                                <th scope="col">Autorestart</th>
                                                 <th scope="col">Time</th>
                                                 <th></th>
                                             </tr>
@@ -69,11 +77,12 @@
                                                 <tbody>
 
                                                 <tr style="text-align: center">
-                                                    <td>{{ e.name_workflow }}</td>
+                                                    <td>{{ e.name_sim }}</td>
                                                     <td>{{ e.jobID }}</td>
                                                     <td>{{ e.user }}</td>
                                                     <td>{{ e.nodes }}</td>
                                                     <td>{{ e.status }}</td>
+                                                    <td>{{ e.autorestart }}</td>
                                                     <td>{{ e.time }}</td>
                                                     <td>
                                                         <form method="POST">
@@ -102,16 +111,19 @@
                                         <table class="table">
                                             <thead>
                                             <tr>
+                                                <th scope="col">Name</th>
                                                 <th scope="col">JobID</th>
                                                 <th scope="col">User</th>
                                                 <th scope="col">Nodes</th>
                                                 <th scope="col">Status</th>
+                                                <th scope="col">Autorestart</th>
                                                 <th scope="col">Time</th>
                                             </tr>
                                             </thead>
                                             {% for e in executionsDone %}
                                                 <tbody>
                                                 <tr>
+                                                    <td>{{ e.name_sim }}</td>
                                                     <td>
                                                         <form method="POST">
                                                             {% csrf_token %}
@@ -124,6 +136,7 @@
                                                     <td>{{ e.user }}</td>
                                                     <td>{{ e.nodes }}</td>
                                                     <td>{{ e.status }}</td>
+                                                    <td>{{ e.autorestart }}</td>
                                                     <td>{{ e.time }}</td>
                                                 </tr>
 
@@ -138,21 +151,24 @@
                                 </div>
                                 <div class="rounded" style="outline: 2px solid black;">
                                     <p class="h4" style="text-align: center">Timeout executions:</p>
-                                    {% if executionsCheckpoint %}
+                                    {% if executionsTimeout %}
 
                                         <table class="table">
                                             <thead>
                                             <tr>
+                                                <th scope="col">Name</th>
                                                 <th scope="col">JobID</th>
                                                 <th scope="col">User</th>
                                                 <th scope="col">Nodes</th>
                                                 <th scope="col">Status</th>
+                                                <th scope="col">Autorestart</th>
                                                 <th scope="col">Time</th>
                                             </tr>
                                             </thead>
-                                            {% for e in executionsCheckpoint %}
+                                            {% for e in executionsTimeout %}
                                                 <tbody>
                                                 <tr>
+                                                    <td>{{ e.name_sim }}</td>
                                                     <td>
                                                         <form method="POST">
                                                             {% csrf_token %}
@@ -165,6 +181,7 @@
                                                     <td>{{ e.user }}</td>
                                                     <td>{{ e.nodes }}</td>
                                                     <td>{{ e.status }}</td>
+                                                    <td>{{ e.autorestart }}</td>
                                                     <td>{{ e.time }}</td>
                                                 </tr>
 
@@ -183,16 +200,19 @@
                                         <table class="table">
                                             <thead>
                                             <tr>
+                                                <th scope="col">Name</th>
                                                 <th scope="col">JobID</th>
                                                 <th scope="col">User</th>
                                                 <th scope="col">Nodes</th>
                                                 <th scope="col">Status</th>
+                                                <th scope="col">Autorestart</th>
                                                 <th scope="col">Time</th>
                                             </tr>
                                             </thead>
                                             {% for e in executionsFailed %}
                                                 <tbody>
                                                 <tr>
+                                                    <td>{{ e.name_sim }}</td>
                                                     <td>
                                                         <form method="POST">
                                                             {% csrf_token %}
@@ -205,6 +225,7 @@
                                                     <td>{{ e.user }}</td>
                                                     <td>{{ e.nodes }}</td>
                                                     <td>{{ e.status }}</td>
+                                                    <td>{{ e.autorestart }}</td>
                                                     <td>{{ e.time }}</td>
                                                 </tr>
                                                 </tbody>

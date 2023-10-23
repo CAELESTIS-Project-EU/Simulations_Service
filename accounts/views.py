@@ -10,23 +10,29 @@ import paramiko
 import time
 import os
 import logging
-from accounts.models import Execution, Key_Gen, Machine
+from accounts.models import Execution, Key_Gen, Machine, Connection
 from cryptography.fernet import Fernet
 from django.db.models import Q
 import threading
 import random
 import string
+import re
+import subprocess
 
 log = logging.getLogger(__name__)
 
-SSH=None
 
 def encrypt(message: bytes, key: bytes) -> bytes:
     return Fernet(key).encrypt(message)
 
 
 def decrypt(token: bytes, key: bytes) -> bytes:
-    return Fernet(key).decrypt(token)
+    try:
+        res = Fernet(key).decrypt(token)
+    except Exception as e:
+        log.info("Error decrypting token: %s", str(e))
+        raise
+    return res
 
 
 def loginPage(request):
@@ -72,17 +78,98 @@ def get_random_string(length):
     return result_str
 
 
+def checkConnection(request):
+    idConn = request.session.get('idConn')
+    if idConn != None:
+        conn = Connection.objects.get(idConn_id=request.session["idConn"])
+        if conn.status == "Disconnect":
+            return False
+    return True
+
+
+def extract_substring(s):
+    match = re.search(r'([a-zA-Z]+)\d\.', s)
+    if match:
+        return match.group(1)
+    return None
+
+
+def scp_upload_folder(local_path, remote_path, content, machineID):
+    ssh = paramiko.SSHClient()
+    pkey = paramiko.RSAKey.from_private_key(StringIO(content))
+    machine_found = Machine.objects.get(id=machineID)
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(machine_found.fqdn, username=machine_found.user, pkey=pkey)
+    sftp = ssh.open_sftp()
+    try:
+        # Create the remote directory if it doesn't exist
+        try:
+            sftp.stat(remote_path)
+        except FileNotFoundError:
+            sftp.mkdir(remote_path)
+        # Recursively upload the local  folder and its contents
+        for root, dirs, files in os.walk(local_path):
+            remote_dir = os.path.join(remote_path, os.path.relpath(root, local_path))
+
+            # Create remote directories as needed
+            try:
+                sftp.stat(remote_dir)
+            except FileNotFoundError:
+                sftp.mkdir(remote_dir)
+            for file in files:
+                local_file = os.path.join(root, file)
+                remote_file = os.path.join(remote_dir, file)
+                sftp.put(local_file, remote_file)
+
+        sftp.close()
+    except Exception as e:
+        print(f"Error: {e}")
+
+
+def get_github_code():
+    script_path = '/var/www/API_REST/gitClone.sh'
+    try:
+        subprocess.run(['bash', script_path], check=True)
+    except subprocess.CalledProcessError as e:
+        log.info(f"Script execution failed with error code {e.returncode}: {e.stderr.decode('utf-8')}")
+    except FileNotFoundError:
+        log.info(f"Error: The script '{script_path}' was not found.")
+    return
+
+
+def delete_github_code():
+    script_path = '/var/www/API_REST/deleteCode.sh'
+    try:
+        subprocess.run(['bash', script_path], check=True)
+    except subprocess.CalledProcessError as e:
+        log.info(f"Script execution failed with error code {e.returncode}: {e.stderr.decode('utf-8')}")
+    except FileNotFoundError:
+        log.info(f"Error: The script '{script_path}' was not found.")
+    return
+
+
 def run_sim(request):
     if request.method == 'POST':
+        checkConnBool = checkConnection(request)
+        if not checkConnBool:
+            machines_done = populate_executions_machines(request)
+            if not machines_done:
+                request.session['firstCheck'] = "no"
+            request.session["checkConn"] = "Required"
+            return render(request, 'accounts/executions.html',
+                          {'machines': machines_done, 'checkConn': "no"})
         form = DocumentForm(request.POST, request.FILES)
         if form.is_valid():
             name = None
             machine = request.POST.get('machineChoice')
             user = machine.split("@")[0]
             fqdn = machine.split("@")[1]
+            machine_folder = extract_substring(fqdn)
             machine_found = Machine.objects.get(author=request.user, user=user, fqdn=fqdn)
             machineID = machine_found.id
             request.session['machineID'] = machineID
+            request.userMachine = user
+            request.fqdn = fqdn
             for filename, file in request.FILES.items():
                 uniqueID = uuid.uuid4()
                 name = file
@@ -93,17 +180,20 @@ def run_sim(request):
             document.save()
             workflow = read_and_write(name)
             user = request.user
-            obj = Key_Gen.objects.filter(author=user, machine_id=machineID).get()
             userMachine = machine_found.user
+            log.info("CONNECTION INSIDE RUN_SIM")
+            log.info(request.session["content"])
+            log.info("MACHINE ID:" + str(request.session["machineID"]))
             ssh = connection(request.session["content"], request.session["machineID"])
-            # principal_folder = "/gpfs/projects/bsce81/alya/tests/TestAPIRest/users/" + userMachine + "/executions/"
+            request.session["connection_machine"] = machineID
+            workflow_name = workflow.get("workflow_type")
             principal_folder = machine_found.wdir
             uniqueIDfolder = uuid.uuid4()
             s = "execution_" + str(uniqueIDfolder)
             if not principal_folder.endswith("/"):
                 principal_folder = principal_folder + "/"
             wdirDone = principal_folder + "" + s
-            cmd1 = "source /etc/profile; cd /gpfs/projects/bsce81/alya/tests/workflow_stable/; mkdir -p " + principal_folder + "/" + s + "/workflows/; echo " + str(
+            cmd1 = "source /etc/profile; mkdir -p " + principal_folder + "/" + s + "/workflows/; echo " + str(
                 workflow) + " > " + principal_folder + "/" + s + "/workflows/" + str(
                 name) + "; cd " + principal_folder + "; BACKUPDIR=$(ls -td ./*/ | head -1); echo EXECUTION_FOLDER:$BACKUPDIR;"
             stdin, stdout, stderr = ssh.exec_command(cmd1)
@@ -115,16 +205,39 @@ def run_sim(request):
             if name_sim is None:
                 name_sim = get_random_string(8)
             execTime = request.POST.get('execTime')
+            checkpoint_flag = request.POST.get("checkpoint_flag")
+            checkpoint_bool = False
+            if checkpoint_flag == "on":
+                checkpoint_bool = True
+
             auto_restart = request.POST.get("auto_restart")
             auto_restart_bool = False
             if auto_restart == "on":
                 auto_restart_bool = True
+
+            if auto_restart_bool:
+                checkpoint_bool = True
             request.session['workflow_path'] = workflow_folder
             qos = request.POST.get('qos')
-            cmd2 = "source /etc/profile; mkdir -p " + execution_folder + "; cd /gpfs/projects/bsce81/alya/tests/workflow_stable/; sh app-checkpoint.sh " + userMachine + " " + str(
-                name) + " " + workflow_folder + " " + execution_folder + " " + numNodes + " " + execTime + " " + qos
+            path_install_dir = machine_found.installDir
+            param_machine = remove_numbers(machine_found.fqdn)
+            workflow_name = str(workflow_name)
+
+            # Example usage
+            local_folder = "/home/ubuntu/installDir"
+            get_github_code()
+            scp_upload_folder(local_folder, path_install_dir, request.session["content"], machineID)
+            delete_github_code()
+
+            if checkpoint_bool:
+                cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; mkdir -p " + execution_folder + "; cd " + machine_found.installDir + "/scripts/" + machine_folder + "/;  source app-checkpoint.sh " + userMachine + " " + str(
+                    name) + " " + workflow_folder + " " + execution_folder + " " + numNodes + " " + execTime + " " + qos + " " + machine_found.installDir
+            else:
+                cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; mkdir -p " + execution_folder + "; cd " + machine_found.installDir + "/scripts/" + machine_folder + "/; source app.sh " + userMachine + " " + str(
+                    name) + " " + workflow_folder + " " + execution_folder + " " + numNodes + " " + execTime + " " + qos + " " + machine_found.installDir
             stdin, stdout, stderr = ssh.exec_command(cmd2)
             stdout = stdout.readlines()
+            stderr = stderr.readlines()
             s = "Submitted batch job"
             var = ""
             while (len(stdout) == 0):
@@ -150,15 +263,27 @@ def run_sim(request):
                         form.qos = qos
                         form.name_sim = name_sim
                         form.autorestart = auto_restart_bool
+                        form.machine = machine_found
                         form.save()
             request.session['execution_folder'] = execution_folder
+            print("NAME")
+            print("API_REST/documents/" + str(name))
             os.remove("documents/" + str(name))
             if auto_restart_bool:
                 monitor_checkpoint(var, request, execTime)
             return redirect('accounts:executions')
+
     else:
         form = DocumentForm()
         request.session['flag'] = 'first'
+        checkConnBool = checkConnection(request)
+        if not checkConnBool:
+            machines_done = populate_executions_machines(request)
+            if not machines_done:
+                request.session['firstCheck'] = "no"
+            request.session["checkConn"] = "Required"
+            return render(request, 'accounts/executions.html',
+                          {'machines': machines_done, 'checkConn': "no"})
     return render(request, 'accounts/run_simulation.html',
                   {'form': form, 'flag': request.session['flag'], 'machines': populate_executions_machines(request)})
 
@@ -168,7 +293,7 @@ def results(request):
         print("")
     else:
         jobID = request.session['jobIDdone']
-        ssh = connection(request.session['content'], request.session['content'])
+        ssh = connection(request.session['content'], request.session['machineID'])
         executionDone = Execution.objects.all().filter(jobID=jobID)
         stdin, stdout, stderr = ssh.exec_command(
             "sacct -j " + str(jobID) + " --format=jobId,user,nnodes,elapsed,state | sed -n 3,3p")
@@ -177,6 +302,18 @@ def results(request):
         Execution.objects.filter(jobID=jobID).update(status=values[4], time=values[3], nodes=int(values[2]))
         execUpdate = Execution.objects.get(jobID=jobID)
     return render(request, 'accounts/results.html', {'executionsDone': execUpdate})
+
+
+def render_right(request):
+    checkConnBool = checkConnection(request)
+    if not checkConnBool:
+        machines_done = populate_executions_machines(request)
+        if not machines_done:
+            request.session['firstCheck'] = "no"
+        request.session["checkConn"] = "Required"
+        return render(request, 'accounts/executions.html',
+                      {'machines': machines_done, 'checkConn': "no"})
+    return
 
 
 def executions(request):
@@ -189,12 +326,14 @@ def executions(request):
             return redirect('accounts:execution_failed')
         elif 'timeoutExecution' in request.POST:
             request.session['jobIDcheckpoint'] = request.POST.get("timeoutExecutionValue")
-            checkpointing(request.POST.get("timeoutExecutionValue"), request)
+            checkpointing_noAutorestart(request.POST.get("timeoutExecutionValue"), request)
             return redirect('accounts:executions')
         elif 'stopExecution' in request.POST:
             request.session['stopExecutionValue'] = request.POST.get("stopExecutionValue")
             stopExecution(request.POST.get("stopExecutionValue"), request)
         elif 'disconnectButton' in request.POST:
+            Connection.objects.filter(idConn_id=request.session["idConn"]).update(status="Disconnect")
+            print("DISCONECT PHASE")
             for key in list(request.session.keys()):
                 if not key.startswith("_"):  # skip keys set by the django system
                     del request.session[key]
@@ -202,52 +341,76 @@ def executions(request):
             if not machines_done:
                 request.session['firstCheck'] = "no"
             request.session["checkConn"] = "Required"
+
             return render(request, 'accounts/executions.html',
                           {'machines': machines_done, 'checkConn': "no"})
         elif 'connection' in request.POST:
-            token = request.POST.get("token")
-            machine = request.POST.get('machineChoice')
-            user = machine.split("@")[0]
-            fqdn = machine.split("@")[1]
+            user = request.POST.get('machineChoice').split("@")[0]
+            fqdn = request.POST.get('machineChoice').split("@")[1]
             machine_found = Machine.objects.get(author=request.user, user=user, fqdn=fqdn)
+            request.session["connection_machine"] = machine_found.id
             machineID = machine_found.id
             request.session['machineID'] = machineID
             obj = Key_Gen.objects.filter(machine_id=machineID).get()
             private_key = obj.private_key
-            userMachine = machine_found.user
             try:
-                content = decrypt(private_key, token).decode()
+                try:
+                    content = decrypt(private_key, request.POST.get("token")).decode()
+                    log.info(content)
+                except Exception:
+                    form = ExecutionForm()
+                    machines_done = populate_executions_machines(request)
+                    request.session['firstCheck'] = "yes"
+                    request.session["checkConn"] = "no"
+                    return render(request, 'accounts/executions.html',
+                                  {'form': form, 'machines': machines_done,
+                                   'checkConn': request.session["checkConn"],
+                                   'firstCheck': request.session['firstCheck'], "errorToken":'yes'})
                 request.session["content"] = content
+                ssh = connection(content, machineID)
             except:
                 print("The token is wrong!")
-        ssh = connection(request.session['content'], request.session['machineID'])
-        executions = Execution.objects.all().filter(author=request.user)
-        for executionE in executions:
-            stdin, stdout, stderr = ssh.exec_command(
-                "sacct -j " + str(executionE.jobID) + " --format=jobId,user,nnodes,elapsed,state | sed -n 3,3p")
-            stdout = stdout.readlines()
-            values = str(stdout).split()
-            Execution.objects.filter(jobID=executionE.jobID).update(status=values[4], time=values[3],
-                                                                    nodes=int(values[2]))
-        executions = Execution.objects.all().filter(author=request.user).filter(
+                return False
+            threadUpdate = updateExecutions(request.POST.get("token"), request.POST.get('machineChoice'),
+                                            request)
+            threadUpdate.start()
+            c = Connection()
+            c.user = request.user
+            c.status = "Active"
+            c.save()
+            request.session["idConn"] = c.idConn_id
+        checkConnBool = checkConnection(request)
+        if not checkConnBool:
+            machines_done = populate_executions_machines(request)
+            if not machines_done:
+                request.session['firstCheck'] = "no"
+            request.session["checkConn"] = "Required"
+            return render(request, 'accounts/executions.html',
+                          {'machines': machines_done, 'checkConn': "no"})
+        machine_connected = Machine.objects.get(id=request.session["connection_machine"])
+        executions = Execution.objects.all().filter(author=request.user, machine=machine_connected).filter(
             Q(status="PENDING") | Q(status="RUNNING"))
-        executionsDone = Execution.objects.all().filter(author=request.user, status="COMPLETED")
-        executionsFailed = Execution.objects.all().filter(author=request.user, status="FAILED")
-        executionsCheckpoint = Execution.objects.all().filter(author=request.user, status="TIMEOUT", autorestart=False)
-        executionsCanceled = Execution.objects.all().filter(author=request.user, status="CANCELLED+", checkpoint="-1")
-        """for execution in executionsCanceled:
-            checks = Execution.objects.all().get(author=request.user, status="CANCELLED+", checkpoint=execution.jobID)
+        executionsDone = Execution.objects.all().filter(author=request.user, status="COMPLETED",
+                                                        machine=machine_connected)
+        executionsFailed = Execution.objects.all().filter(author=request.user, status="FAILED",
+                                                          machine=machine_connected)
+        executionTimeout = Execution.objects.all().filter(author=request.user, status="TIMEOUT",
+                                                          autorestart=False, machine=machine_connected)
+        executionsCheckpoint = Execution.objects.all().filter(author=request.user, status="TIMEOUT",
+                                                              autorestart=True, machine=machine_connected)
+        executionsCanceled = Execution.objects.all().filter(author=request.user, status="CANCELLED+",
+                                                            checkpoint="-1", machine=machine_connected)
+        for execution in executionsCanceled:
+            checks = Execution.objects.all().get(author=request.user, status="CANCELLED+", checkpoint=execution.jobID,
+                                                 machine=machine_connected)
             if checks is not None:
                 execution.status = "TIMEOUT"
                 execution.checkpoint = 0
-                execution.save()"""
-        """for execution in executionsDone:
-            if execution.checkpoint != 0:
-                e = Execution.objects.all().get(author=request.user, jobID=execution.checkpoint)
-                checkpointingFinished(e, request)"""
+                execution.save()
         return render(request, 'accounts/executions.html',
-                      {'executions': executions, 'executionsDone': executionsDone, 'executionsFailed': executionsFailed,
-                       'executionsCheckpoint': executionsCheckpoint, 'checkConn': "yes"})
+                      {'executions': executions, 'executionsDone': executionsDone,
+                       'executionsFailed': executionsFailed,
+                       'executionsTimeout': executionTimeout, 'checkConn': "yes"})
     else:
         form = ExecutionForm()
         machines_done = populate_executions_machines(request)
@@ -263,28 +426,44 @@ def executions(request):
                            'checkConn': request.session["checkConn"],
                            'firstCheck': request.session['firstCheck']})
         else:
-            executions = Execution.objects.all().filter(author=request.user).filter(
+            checkConnBool = checkConnection(request)
+            if not checkConnBool:
+                machines_done = populate_executions_machines(request)
+                if not machines_done:
+                    request.session['firstCheck'] = "no"
+                request.session["checkConn"] = "Required"
+                return render(request, 'accounts/executions.html',
+                              {'machines': machines_done, 'checkConn': "no"})
+
+            machine_connected = Machine.objects.get(id=request.session["connection_machine"])
+
+            executions = Execution.objects.all().filter(author=request.user, machine=machine_connected).filter(
                 Q(status="PENDING") | Q(status="RUNNING"))
-            executionsDone = Execution.objects.all().filter(author=request.user, status="COMPLETED")
-            executionsFailed = Execution.objects.all().filter(author=request.user, status="FAILED")
-            executionsCheckpoint = Execution.objects.all().filter(author=request.user, status="TIMEOUT")
-            executionsCanceled = Execution.objects.all().filter(author=request.user, status="CANCELED", checkpoint="-1")
+            executionsDone = Execution.objects.all().filter(author=request.user, machine=machine_connected,
+                                                            status="COMPLETED")
+            executionsFailed = Execution.objects.all().filter(author=request.user, machine=machine_connected,
+                                                              status="FAILED")
+            executionsCheckpoint = Execution.objects.all().filter(author=request.user, machine=machine_connected,
+                                                                  status="TIMEOUT")
+            executionTimeout = Execution.objects.all().filter(author=request.user, machine=machine_connected,
+                                                              status="TIMEOUT",
+                                                              autorestart=False)
+            executionsCanceled = Execution.objects.all().filter(author=request.user, machine=machine_connected,
+                                                                status="CANCELED",
+                                                                checkpoint="-1")
             for execution in executionsCanceled:
                 checks = Execution.objects.all().get(author=request.user, status="CANCELLED+",
+                                                     machine=machine_connected,
                                                      checkpoint=execution.jobID)
                 if checks is not None:
                     execution.status = "TIMEOUT"
                     execution.checkpoint = 0
                     execution.save()
                 checks.delete()
-            for execution in executionsDone:
-                if execution.checkpoint != 0:
-                    e = Execution.objects.all().get(author=request.user, jobID=execution.checkpoint)
-                    checkpointingFinished(e, request)
             request.session["checkConn"] = "yes"
     return render(request, 'accounts/executions.html',
                   {'form': form, 'executions': executions, 'executionsDone': executionsDone,
-                   'executionsFailed': executionsFailed, 'executionsCheckpoint': executionsCheckpoint,
+                   'executionsFailed': executionsFailed, 'executionsTimeout': executionTimeout,
                    "checkConn": request.session["checkConn"]})
 
 
@@ -297,33 +476,101 @@ def populate_executions_machines(request):
     return machines_done
 
 
+class updateExecutions(threading.Thread):
+    def __init__(self, token, machine, request):
+        threading.Thread.__init__(self)
+        self.token = token
+        self.machine = machine
+        self.request = request
+        self.timeout = 120 * 60
+
+    def run(self):
+        timeout_start = time.time()
+        while time.time() < timeout_start + self.timeout:
+            boolException = update_table(self.token, self.machine, self.request)
+            if not boolException:
+                break
+            time.sleep(2)
+        Connection.objects.filter(idConn_id=self.request.session["idConn"]).update(status="Disconnect")
+        render_right(self.request)
+        return
+
+
+def update_table(token, machine, request):
+    user = machine.split("@")[0]
+    fqdn = machine.split("@")[1]
+    machine_found = Machine.objects.get(author=request.user, user=user, fqdn=fqdn)
+    request.session["connection_machine"] = machine_found.id
+    machineID = machine_found.id
+    request.session['machineID'] = machineID
+    obj = Key_Gen.objects.filter(machine_id=machineID).get()
+    private_key = obj.private_key
+    userMachine = machine_found.user
+    try:
+        try:
+            content = decrypt(private_key, token).decode()
+        except Exception:
+            log.info("ERRORRRRR 2 ")
+            return redirect('accounts:executions', {"errorToken":'yes'})
+        request.session["content"] = content
+    except:
+        log.info("ERROR 1")
+        print("The token is wrong!")
+        return redirect('accounts:executions', {"errorToken": 'yes'})
+    log.info("UPDATE TABLE EXECUTIONS")
+    ssh = connection(content, machineID)
+    executions = Execution.objects.all().filter(author=request.user)
+    for executionE in executions:
+        stdin, stdout, stderr = ssh.exec_command(
+            "sacct -j " + str(executionE.jobID) + " --format=jobId,user,nnodes,elapsed,state | sed -n 3,3p")
+        stdout = stdout.readlines()
+        values = str(stdout).split()
+        Execution.objects.filter(jobID=executionE.jobID).update(status=values[4], time=values[3],
+                                                                nodes=int(values[2]))
+    return True
+
+
 def connection(content, machineID):
-    ssh = paramiko.SSHClient()
-    pkey = paramiko.RSAKey.from_private_key(StringIO(content))
-    machine_found = Machine.objects.get(id=machineID)
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(machine_found.fqdn, username=machine_found.user, pkey=pkey)
+    try:
+        # log.info("CONNECTION STEP 0, CONTENT:" + str(content))
+        ssh = paramiko.SSHClient()
+        # log.info("CONNECTION STEP 1")
+        pkey = paramiko.RSAKey.from_private_key(StringIO(content))
+        # log.info("CONNECTION STEP 2")
+        machine_found = Machine.objects.get(id=machineID)
+        # log.info("CONNECTION STEP 3, MACHINE ID:"+str(machineID))
+        # log.info("CONNECTION STEP 4, PKEY:" + str(pkey))
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(machine_found.fqdn, username=machine_found.user, pkey=pkey)
+
+        # log.info("CONNECTION STEP 5, DONE")
+    except:
+        log.info("ERROR CONNECTION")
+        log.info("CONNECTION STEP 3, MACHINE ID:" + str(machineID))
+        log.info("CONNECTION , PKEY:" + str(content))
+        return redirect('accounts:executions', {"errorToken":'yes'})
     return ssh
 
 
 def checkpointingFinished(execution, request):
     if execution.checkpoint != 0:
         e = Execution.objects.all().get(author=request.user, jobID=execution.jobID)
-        checkpointingFinished(e, request)
-    Execution.objects.filter(jobID=execution.jobID).update(status="FINISHED_CHECKPOINTED")
-    return
+        return checkpointingFinished(e, request)
+    else:
+        Execution.objects.filter(jobID=execution.jobID).update(status="FINISHED_CHECKPOINTED")
+        return
 
 
 def stopExecution(jobIDstop, request):
     ssh = connection(request.session['content'], request.session['machineID'])
     command = "scancel " + jobIDstop
     stdin, stdout, stderr = ssh.exec_command(command)
+    Execution.objects.filter(jobID=jobIDstop).update(status="CANCELLED+")
     form = ExecutionForm()
     executions = Execution.objects.all().filter(author=request.user).filter(Q(status="PENDING") | Q(status="RUNNING"))
     executionsDone = Execution.objects.all().filter(author=request.user, status="COMPLETED")
     executionsFailed = Execution.objects.all().filter(author=request.user, status="FAILED")
     executionTimeout = Execution.objects.all().filter(author=request.user, status="TIMEOUT", autorestart=False)
-    executionsCheckpoint = Execution.objects.all().filter(author=request.user, status="TIMEOUT", autorestart=True)
     return render(request, 'accounts/executions.html',
                   {'form': form, 'executions': executions, 'executionsDone': executionsDone,
                    'executionsFailed': executionsFailed, 'executionsTimeout': executionTimeout})
@@ -338,22 +585,16 @@ class myThread(threading.Thread):
 
     def run(self):
         time.sleep(int(self.time) * 60)
-        ssh = connection(self.request.session['content'], self.request.session['machineID'])
-        wait_timeout(self.jobID, self.request, ssh)
+        wait_timeout_new(self.jobID, self.request)
         return
 
 
-def wait_timeout(jobID, request, ssh):
-    stdin, stdout, stderr = ssh.exec_command(
-        "sacct -j " + str(jobID) + " --format=jobId,user,nnodes,elapsed,state | sed -n 3,3p")
-    stdout = stdout.readlines()
-    values = str(stdout).split()
-    if values[4] != "TIMEOUT":
+def wait_timeout_new(jobID, request):
+    execution = Execution.objects.get(jobID=jobID)
+    if execution.status != "TIMEOUT":
         time.sleep(15)
-        wait_timeout(jobID, request, ssh)
+        wait_timeout_new(jobID, request)
     else:
-        Execution.objects.filter(jobID=jobID).update(status=values[4], time=values[3],
-                                                     nodes=int(values[2]))
         checkpointing(jobIDCheckpoint=jobID, request=request)
     return
 
@@ -367,8 +608,11 @@ def monitor_checkpoint(jobID, request, execTime):
 def checkpointing(jobIDCheckpoint, request):
     ssh = connection(request.session['content'], request.session['machineID'])
     checkpointID = Execution.objects.all().get(author=request.user, jobID=jobIDCheckpoint)
-    command = "source /etc/profile; cd /gpfs/projects/bsce81/alya/tests/workflow_stable/; sh app-checkpoint.sh " + checkpointID.user + " " + checkpointID.name_workflow + " " + checkpointID.workflow_path + " " + checkpointID.wdir + " " + str(
-        checkpointID.nodes) + " " + str(checkpointID.execution_time) + " " + checkpointID.qos
+    machine_connected = Machine.objects.get(id=request.session["connection_machine"])
+    machine_folder = extract_substring(machine_connected.fqdn)
+    command = "source /etc/profile; cd " + machine_connected.installDir + "/scripts/" + machine_folder + "/; sh app-checkpoint.sh " + checkpointID.user + " " + checkpointID.name_workflow + " " + checkpointID.workflow_path + " " + checkpointID.wdir + " " + str(
+        checkpointID.nodes) + " " + str(
+        checkpointID.execution_time) + " " + checkpointID.qos + " " + machine_connected.installDir
     stdin, stdout, stderr = ssh.exec_command(command)
     stdout = stdout.readlines()
     s = "Submitted batch job"
@@ -404,7 +648,49 @@ def checkpointing(jobIDCheckpoint, request):
     return
 
 
-def execution_failed(request):
+def checkpointing_noAutorestart(jobIDCheckpoint, request):
+    ssh = connection(request.session['content'], request.session['machineID'])
+    checkpointID = Execution.objects.all().get(author=request.user, jobID=jobIDCheckpoint)
+    machine_connected = Machine.objects.get(id=request.session["connection_machine"])
+    machine_folder = extract_substring(machine_connected.fqdn)
+    command = "source /etc/profile; cd " + machine_connected.installDir + "/scripts/" + machine_folder + "/; sh app-checkpoint.sh " + checkpointID.user + " " + checkpointID.name_workflow + " " + checkpointID.workflow_path + " " + checkpointID.wdir + " " + str(
+        checkpointID.nodes) + " " + str(
+        checkpointID.execution_time) + " " + checkpointID.qos + " " + machine_connected.installDir
+    stdin, stdout, stderr = ssh.exec_command(command)
+    stdout = stdout.readlines()
+    s = "Submitted batch job"
+    time = 0
+    while (len(stdout) == 0):
+        time.sleep(1)
+    if (len(stdout) > 1):
+        for line in stdout:
+            if (s in line):
+                jobID = int(line.replace(s, ""))
+                request.session['jobID'] = jobID
+                form = Execution()
+                form.jobID = request.session['jobID']
+                form.user = checkpointID.user
+                form.author = request.user
+                form.nodes = checkpointID.nodes
+                form.status = "PENDING"
+                form.checkpoint = jobIDCheckpoint
+                form.time = "00:00:00"
+                form.wdir = checkpointID.wdir
+                form.workflow_path = checkpointID.workflow_path
+                form.execution_time = int(checkpointID.execution_time)
+                time = int(checkpointID.execution_time)
+                form.name_workflow = checkpointID.name_workflow
+                form.qos = checkpointID.qos
+                form.name_sim = checkpointID.name_sim
+                form.autorestart = checkpointID.autorestart
+                form.save()
+    checkpointID = Execution.objects.all().get(author=request.user, jobID=jobIDCheckpoint)
+    checkpointID.status = "CONTINUE"
+    checkpointID.save()
+    return
+
+
+def execution_failed(request):  # used to show a page when a execution ended with a bad results
     if request.method == 'POST':
         print("")
     else:
@@ -449,45 +735,48 @@ def read_and_write(name):
 
 def ssh_keys_result(request):
     if request.method == 'POST':
-        return redirect('accounts:dashboard')
+        return render('accounts/dashboard')
     else:
-        return redirect('accounts:dashboard')
+        return render('accounts/dashboard')
 
 
-def ssh_keys_generation(request):
+def ssh_keys_generation(request):  # method to generate the ssh keys of a specific machine
     if request.method == 'POST':
         form = Key_Gen_Form(request.POST)
         if form.is_valid():
-            if 'reuse_token_button' in request.POST:
-                instance = form.save(commit=False)
-                instance.author = request.user
+            if 'reuse_token_button' in request.POST:  # if the user has more than 1 Machine, he can decide to use the same SSH keys and token for all its machines
                 machine = request.POST.get('machineChoice')
                 user = machine.split("@")[0]
                 fqdn = machine.split("@")[1]
                 machine_found = Machine.objects.get(author=request.user, user=user, fqdn=fqdn)
+                instance = form.save(commit=False)
+                instance.author = request.user
                 instance.machine = machine_found
                 instance.public_key = Key_Gen.objects.get(author=instance.author).public_key
                 instance.private_key = Key_Gen.objects.get(author=instance.author).private_key
-                request.session['warning'] = "first"
                 instance.save()
+                request.session['warning'] = "first"
                 return redirect('accounts:dashboard')
-            else:
+            else:  # normal generation of the SSH keys
                 instance = form.save(commit=False)
                 instance.author = request.user
-                machine = request.POST.get('machineChoice')
+                machine = request.POST.get('machineChoice')  # it's the machine choosen by the user
                 user = machine.split("@")[0]
                 fqdn = machine.split("@")[1]
+                request.userMachine = user
+                request.fqdn = fqdn
                 machine_found = Machine.objects.get(author=request.user, user=user, fqdn=fqdn)
                 instance.machine = machine_found
-                token = Fernet.generate_key()
-                key = paramiko.RSAKey.generate(2048)
+                token = Fernet.generate_key()  # to generate a security token
+                key = paramiko.RSAKey.generate(2048)  # to generate the SSH keys
                 privateString = StringIO()
                 key.write_private_key(privateString)
                 private_key = privateString.getvalue()
                 x = private_key.split("\'")
                 private_key = x[0]
                 public_key = key.get_base64()
-                enc_private_key = encrypt(private_key.encode(), token)
+                enc_private_key = encrypt(private_key.encode(),
+                                          token)  # encrypting the private SSH keys using the security token, only the user is allowed to use its SSH keys to connect to its machine
                 enc_private_key = str(enc_private_key).split("\'")[1]
                 x = str(token).split("\'")
                 token = x[1]
@@ -523,8 +812,7 @@ def ssh_keys_generation(request):
                                        'machines': populate_executions_machines(request), 'choice': machine})
                 else:
                     instance.save()
-                for key in list(request.session.keys()):
-                    del request.session[key]
+                public_key = "rsa-sha2-512 " + public_key
                 return render(request, 'accounts/ssh_keys_result.html', {'token': token, 'public_key': public_key})
     else:
         form = Key_Gen_Form(initial={'public_key': 123, 'private_key': 123})
@@ -539,7 +827,7 @@ def ssh_keys_generation(request):
                    'machines': populate_executions_machines(request), 'firstCheck': request.session['firstCheck']})
 
 
-def machine_definition(request):
+def machine_definition(request):  # method to create the definition of a new Machine
     if request.method == 'POST':
         form = Machine_Form(request.POST)
         form.author = request.user
@@ -553,7 +841,7 @@ def machine_definition(request):
     return render(request, 'accounts/machine_definition.html', {'form': form})
 
 
-def redefine_machine(request):
+def redefine_machine(request):  # method to redefine the details of a Machine
     if request.method == 'POST':
         form = Machine_Form(request.POST)
         request.session['noMachines'] = "yes"
@@ -567,6 +855,7 @@ def redefine_machine(request):
             request.session['machineID'] = machineID
             form = Machine_Form(
                 initial={'fqdn': machine_found.fqdn, 'user': machine_found.user, 'wdir': machine_found.wdir,
+                         'installDir': machine_found.installDir,
                          'id': machine_found.id, 'author': machine_found.author})
             return render(request, 'accounts/redefine_machine.html',
                           {'form': form, 'firstPhase': request.session['firstPhase'],
@@ -577,8 +866,9 @@ def redefine_machine(request):
                 userForm = form['user'].value()
                 fqdnForm = form['fqdn'].value()
                 wdirForm = form['wdir'].value()
+                installDirForM = form['installDir'].value()
                 Machine.objects.filter(id=request.session['machineID']).update(user=userForm, wdir=wdirForm,
-                                                                               fqdn=fqdnForm)
+                                                                               fqdn=fqdnForm, installDir=installDirForM)
                 return render(request, 'accounts/redefine_machine.html',
                               {'form': form, 'firstPhase': request.session['firstPhase'], 'flag': 'yes',
                                'noMachines': request.session['noMachines']})
@@ -602,3 +892,30 @@ def home(request):
 
 def dashboard(request):
     return render(request, 'accounts/dashboard.html')
+
+
+def load_workflow(request, path_install_dir, workflow_name):
+    ssh = connection(request.session["content"], request.session["machineID"])
+    machine_found = Machine.objects.get(id=request.session['machineID'])
+    param_machine = remove_numbers(machine_found.fqdn)
+    cmd = "source /etc/profile; cd /gpfs/projects/bsce81/alya/tests/workflow_stable/scripts/; sh loadWorkflows.sh " + path_install_dir + " " + workflow_name + " " + param_machine + ";"
+    stdin, stdout, stderr = ssh.exec_command(cmd)
+    return
+
+
+def remove_numbers(input_str):
+    # Split the input string by '.' to separate the hostname and domain
+    parts = input_str.split('.')
+
+    if len(parts) >= 2:
+        # Take the first part as the hostname
+        hostname = parts[0]
+
+        # Remove any trailing digits from the hostname
+        while hostname and hostname[-1].isdigit():
+            hostname = hostname[:-1]
+
+        return hostname
+    else:
+        # If there are not enough parts, return the original string
+        return input_str
