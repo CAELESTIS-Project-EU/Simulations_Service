@@ -9,16 +9,7 @@
                 <div class="wrapper-create-work">
                     <form method="post" enctype="multipart/form-data">
                         {% csrf_token %}
-                        <select id="machineChoice" name="machineChoice" class="btn btn-secondary dropdown-toggle">
-                            {% if choice %}
-                                <option>{{ choice }}</option>
-                            {% else %}
-                                {% for m in machines %}
-                                    <option>{{ m }}</option>
-                                {% endfor %}
-                            {% endif %}
-                        </select>
-                        <small id="emailHelp" class="form-text text-muted">Choose the machine</small>
+                        <button type="button" class="btn btn-primary" disabled>{{ machine_chosen }}</button>
                         <br>
                         <input hidden type="text" name="user" value="{{ user.username }}"/>
                         <div class="form-group" style="align-content: center">

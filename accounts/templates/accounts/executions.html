@@ -37,15 +37,24 @@
                             </div>
                         {% endif %}
                     {% else %}
+                        {% if machine_chosen %}
                         <h2 class="text-uppercase text-center mb-5" style="text-decoration: underline;">
-                            <b>EXECUTIONS</b>
+                            <b>{{ machine_chosen }}</b>
                         </h2>
+                        {% endif %}
                         <div class="d-flex ">
                             <div class="p-2 mr-auto">
-                                <a href="/run_sim">New execution
-                                    <button type="button" class="btn btn-success fa fa-plus-circle"></button>
-                                </a>
+                                <form method="POST">
+                                    {% csrf_token %}
+                                    <input hidden value="{{ machine_chosen }}"
+                                           name="machine_chosen_value">
+                                    <button type="submit" name="run_sim"
+                                            class="btn btn-success fa fa-plus-circle">
+                                    </button>
+                                </form>
+
                             </div>
+
                             <div class="p-2 ">
                                 <form method="post">
                                     {% csrf_token %}

@@ -176,7 +176,7 @@ def run_sim(request):
         form = DocumentForm(request.POST, request.FILES)
         if form.is_valid():
             name = None
-            machine = request.POST.get('machineChoice')
+            machine =request.session['machine_chosen']
             user = machine.split("@")[0]
             fqdn = machine.split("@")[1]
             machine_folder = extract_substring(fqdn)
@@ -286,6 +286,7 @@ def run_sim(request):
     else:
         form = DocumentForm()
         request.session['flag'] = 'first'
+
         checkConnBool = checkConnection(request)
         if not checkConnBool:
             machines_done = populate_executions_machines(request)
@@ -295,7 +296,7 @@ def run_sim(request):
             return render(request, 'accounts/executions.html',
                           {'machines': machines_done, 'checkConn': "no"})
     return render(request, 'accounts/run_simulation.html',
-                  {'form': form, 'flag': request.session['flag'], 'machines': populate_executions_machines(request)})
+                  {'form': form, 'flag': request.session['flag'], 'machines': populate_executions_machines(request), 'machine_chosen':request.session['machine_chosen']})
 
 
 def results(request):
@@ -372,6 +373,10 @@ def executions(request):
         elif 'deleteExecution' in request.POST:
             request.session['deleteExecutionValue'] = request.POST.get("deleteExecutionValue")
             deleteExecution(request.POST.get("deleteExecutionValue"), request)
+        elif 'run_sim' in request.POST:
+            log.info("RUN_SIM CALL")
+            request.session['machine_chosen'] = request.POST.get("machine_chosen_value")
+            return redirect('accounts:run_sim')
 
         elif 'disconnectButton' in request.POST:
             Connection.objects.filter(idConn_id=request.session["idConn"]).update(status="Disconnect")
@@ -383,7 +388,7 @@ def executions(request):
             if not machines_done:
                 request.session['firstCheck'] = "no"
             request.session["checkConn"] = "Required"
-
+            request.session['machine_chosen'] = None
             return render(request, 'accounts/executions.html',
                           {'machines': machines_done, 'checkConn': "no"})
         elif 'connection' in request.POST:
@@ -408,11 +413,12 @@ def executions(request):
                                    'checkConn': request.session["checkConn"],
                                    'firstCheck': request.session['firstCheck'], "errorToken":'yes'})
                 request.session["content"] = content
+                request.session['machine_chosen']=request.POST.get('machineChoice')
                 ssh = connection(content, machineID)
             except:
                 log.info("The token is wrong!")
                 return False
-            threadUpdate = updateExecutions(request.POST.get("token"), request.POST.get('machineChoice'),
+            threadUpdate = updateExecutions(request.POST.get("token"), request.session['machine_chosen'],
                                             request)
             threadUpdate.start()
             c = Connection()
@@ -451,15 +457,18 @@ def executions(request):
         return render(request, 'accounts/executions.html',
                       {'executions': executions, 'executionsDone': executionsDone,
                        'executionsFailed': executionsFailed,
-                       'executionsTimeout': executionTimeout, 'checkConn': "yes"})
+                       'executionsTimeout': executionTimeout, 'checkConn': "yes", 'machine_chosen':request.session['machine_chosen']})
     else:
+        log.info("ENTERED HERE")
         form = ExecutionForm()
         machines_done = populate_executions_machines(request)
         if not machines_done:
+            log.info("ENTERED HERE 2")
             request.session['firstCheck'] = "no"
             return render(request, 'accounts/executions.html',
                           {'firstCheck': request.session['firstCheck']})
         elif "content" not in request.session:
+            log.info("ENTERED HERE 3")
             request.session['firstCheck'] = "yes"
             request.session["checkConn"] = "no"
             return render(request, 'accounts/executions.html',
@@ -467,14 +476,17 @@ def executions(request):
                            'checkConn': request.session["checkConn"],
                            'firstCheck': request.session['firstCheck']})
         else:
+            log.info("ENTERED HERE 4")
+            log.info(request.session['machine_chosen'])
             checkConnBool = checkConnection(request)
             if not checkConnBool:
+                log.info("ENTERED HERE 5")
                 machines_done = populate_executions_machines(request)
                 if not machines_done:
                     request.session['firstCheck'] = "no"
                 request.session["checkConn"] = "Required"
                 return render(request, 'accounts/executions.html',
-                              {'machines': machines_done, 'checkConn': "no"})
+                              {'machines': machines_done, 'checkConn': "no", 'machine_chosen':request.POST.get('machineChoice')})
 
             machine_connected = Machine.objects.get(id=request.session["connection_machine"])
 
@@ -505,7 +517,7 @@ def executions(request):
     return render(request, 'accounts/executions.html',
                   {'form': form, 'executions': executions, 'executionsDone': executionsDone,
                    'executionsFailed': executionsFailed, 'executionsTimeout': executionTimeout,
-                   "checkConn": request.session["checkConn"]})
+                   "checkConn": request.session["checkConn"], 'machine_chosen':request.session['machine_chosen']})
 
 
 def populate_executions_machines(request):
