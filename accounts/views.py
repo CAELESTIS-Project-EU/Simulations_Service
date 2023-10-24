@@ -8,7 +8,6 @@ from django.contrib import messages
 import yaml
 import paramiko
 import time
-import os
 import logging
 from accounts.models import Execution, Key_Gen, Machine, Connection
 from cryptography.fernet import Fernet
@@ -17,6 +16,8 @@ import threading
 import random
 import string
 import re
+import os
+import shutil
 import subprocess
 
 log = logging.getLogger(__name__)
@@ -74,7 +75,7 @@ def logoutUser(request):
 def get_random_string(length):
     # With combination of lower and upper case
     result_str = ''.join(random.choice(string.ascii_letters) for i in range(length))
-    # print random string
+    # log.info random string
     return result_str
 
 
@@ -125,7 +126,7 @@ def scp_upload_folder(local_path, remote_path, content, machineID):
 
             sftp.close()
         except Exception as e:
-            print(f"Error: {e}")
+            log.info(f"Error: {e}")
     else:
         log.info("The code is already up to date! No git clone needed!")
 
@@ -137,12 +138,12 @@ def get_github_code():
         result = subprocess.run([script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         # Check the output
         if "Changes detected. Pulling latest changes..." in result.stdout:
-            print("Changes were detected and pulled. Doing other things...")
+            log.info("Changes were detected and pulled. Doing other things...")
             return True
         else:
-            print("No changes detected or there was an error.")
+            log.info("No changes detected or there was an error.")
             if result.stderr:
-                print("Error:", result.stderr)
+                log.info("Error:", result.stderr)
 
     except subprocess.CalledProcessError as e:
         log.info(f"Script execution failed with error code {e.returncode}: {e.stderr.decode('utf-8')}")
@@ -275,8 +276,8 @@ def run_sim(request):
                         form.machine = machine_found
                         form.save()
             request.session['execution_folder'] = execution_folder
-            print("NAME")
-            print("API_REST/documents/" + str(name))
+            log.info("NAME")
+            log.info("API_REST/documents/" + str(name))
             os.remove("documents/" + str(name))
             if auto_restart_bool:
                 monitor_checkpoint(var, request, execTime)
@@ -299,7 +300,7 @@ def run_sim(request):
 
 def results(request):
     if request.method == 'POST':
-        print("")
+        log.info("")
     else:
         jobID = request.session['jobIDdone']
         ssh = connection(request.session['content'], request.session['machineID'])
@@ -326,10 +327,23 @@ def render_right(request):
 
 
 
+
+
+def delete_parent_folder(path,ssh):
+    log.info("DELETE FOLDER")
+    log.info(path)
+    parent_folder = os.path.dirname(path)
+    log.info(parent_folder)
+    command="rm -rf "+parent_folder
+    stdin, stdout, stderr = ssh.exec_command(command)
+    return
+
 def deleteExecution(jobIDdelete, request):
     ssh = connection(request.session['content'], request.session['machineID'])
     command = "scancel " + jobIDdelete
     stdin, stdout, stderr = ssh.exec_command(command)
+    exec=Execution.objects.filter(jobID=jobIDdelete).get()
+    delete_parent_folder(exec.wdir, ssh)
     Execution.objects.filter(jobID=jobIDdelete).delete()
     form = ExecutionForm()
     executions = Execution.objects.all().filter(author=request.user).filter(Q(status="PENDING") | Q(status="RUNNING"))
@@ -361,7 +375,7 @@ def executions(request):
 
         elif 'disconnectButton' in request.POST:
             Connection.objects.filter(idConn_id=request.session["idConn"]).update(status="Disconnect")
-            print("DISCONECT PHASE")
+            log.info("DISCONECT PHASE")
             for key in list(request.session.keys()):
                 if not key.startswith("_"):  # skip keys set by the django system
                     del request.session[key]
@@ -396,7 +410,7 @@ def executions(request):
                 request.session["content"] = content
                 ssh = connection(content, machineID)
             except:
-                print("The token is wrong!")
+                log.info("The token is wrong!")
                 return False
             threadUpdate = updateExecutions(request.POST.get("token"), request.POST.get('machineChoice'),
                                             request)
@@ -706,7 +720,7 @@ def checkpointing_noAutorestart(jobIDCheckpoint, request):
 
 def execution_failed(request):  # used to show a page when a execution ended with a bad results
     if request.method == 'POST':
-        print("")
+        log.info("")
     else:
         jobID = request.session['jobIDfailed']
         ssh = connection(request.session['content'], request.session['machineID'])
@@ -743,7 +757,7 @@ def read_and_write(name):
             workflow = yaml.safe_load(file)
             return workflow
         except yaml.YAMLError as exc:
-            print(exc)
+            log.info(exc)
     return None
 
 
@@ -908,15 +922,6 @@ def dashboard(request):
     return render(request, 'accounts/dashboard.html')
 
 
-def load_workflow(request, path_install_dir, workflow_name):
-    ssh = connection(request.session["content"], request.session["machineID"])
-    machine_found = Machine.objects.get(id=request.session['machineID'])
-    param_machine = remove_numbers(machine_found.fqdn)
-    cmd = "source /etc/profile; cd /gpfs/projects/bsce81/alya/tests/workflow_stable/scripts/; sh loadWorkflows.sh " + path_install_dir + " " + workflow_name + " " + param_machine + ";"
-    stdin, stdout, stderr = ssh.exec_command(cmd)
-    return
-
-
 def remove_numbers(input_str):
     # Split the input string by '.' to separate the hostname and domain
     parts = input_str.split('.')
@@ -933,3 +938,4 @@ def remove_numbers(input_str):
     else:
         # If there are not enough parts, return the original string
         return input_str
+
