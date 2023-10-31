@@ -1,7 +1,7 @@
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.forms import User
 from django import forms
-from accounts.models import Document, WorkFlow, Execution, Key_Gen, Machine, Connection
+from accounts.models import Document, WorkFlow, Execution, Key_Gen, Machine, Connection, Mesh, userMesh
 
 
 class CreateUserForm(UserCreationForm):
@@ -39,10 +39,15 @@ class Key_Gen_Form(forms.ModelForm):
 class Machine_Form(forms.ModelForm):
     class Meta:
         model = Machine
-        fields = ('author', 'user', 'fqdn', 'wdir', 'installDir')
+        fields = ('author', 'user', 'fqdn', 'wdir', 'installDir', 'dataDir')
 
 
 class Connection_Form(forms.ModelForm):
     class Meta:
         model = Connection
         fields = ('user', 'status')
+
+class Mesh_Form(forms.ModelForm):
+    class Meta:
+        model = Mesh
+        fields = ('name','pathFTP', 'description', 'dateLastUpdate')

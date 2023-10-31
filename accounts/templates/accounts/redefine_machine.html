@@ -5,7 +5,9 @@
     {% if user.is_authenticated %}
         <div class="card" style="border-radius: 15px;">
             <div class="card-body p-5">
-                <h2 class="text-uppercase text-center mb-5" style="text-decoration: underline;"><b>MACHINES</b></h2>
+                <h2 class="text-center mb-5" style="text-decoration: underline;">
+                           <button type="button" class="btn btn-primary btn-xl" disabled>MACHINES</button>
+                </h2>
                 {% if noMachines != "yes" %}
                     <div class="d-flex flex-row-reverse">
                         <div class="p-2">
@@ -70,6 +72,12 @@
                                     <label class="font-weight-bold">INSTALL_DIR</label>
                                     {% render_field form.installDir name="installDir" type="text" class="form-control" value="{{ form.installDir }}" %}
                                     <small class="form-text text-muted">Redefine the installation directory path for the
+                                        choosen machine</small>
+                                </div>
+                                <div class="form-group">
+                                    <label class="font-weight-bold">DATA_DIR</label>
+                                    {% render_field form.dataDir name="dataDir" type="text" class="form-control" value="{{ form.dataDir }}" %}
+                                    <small class="form-text text-muted">Redefine the data directory path for the
                                         choosen machine</small>
                                 </div>
                                 {{ form.author.as_hidden }}

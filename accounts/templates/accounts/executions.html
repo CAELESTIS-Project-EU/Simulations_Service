@@ -6,8 +6,8 @@
             <div class="card-body p-5">
                 {% if firstCheck != "no" %}
                     {% if checkConn == "no" %}
-                        <h2 class="text-uppercase text-center mb-5" style="text-decoration: underline;">
-                            <b>CONNECTION</b>
+                        <h2 class="text-center mb-5" style="text-decoration: underline;">
+                           <button type="button" class="btn btn-primary btn-xl" disabled>Connection</button>
                         </h2>
                         <div class="wrapper-create-work">
                             <form method="post" enctype="multipart/form-data">
@@ -38,8 +38,10 @@
                         {% endif %}
                     {% else %}
                         {% if machine_chosen %}
-                        <h2 class="text-uppercase text-center mb-5" style="text-decoration: underline;">
-                            <b>{{ machine_chosen }}</b>
+
+
+                        <h2 class="text-center mb-5" style="text-decoration: underline;">
+                           <button type="button" class="btn btn-primary btn-xl" disabled>{{ machine_chosen }}</button>
                         </h2>
                         {% endif %}
                         <div class="d-flex ">
@@ -97,7 +99,7 @@
                                                     <td>
                                                         <form method="POST">
                                                             {% csrf_token %}
-                                                            <input hidden value="{{ e.jobID }}"
+                                                            <input hidden value="{{ e.eID }}"
                                                                    name="stopExecutionValue">
                                                             <button type="submit" name="stopExecution"
                                                                     class="btn btn-primary">STOP
@@ -108,7 +110,7 @@
                                                     <td>
                                                         <form method="POST">
                                                             {% csrf_token %}
-                                                            <input hidden value="{{ e.jobID }}"
+                                                            <input hidden value="{{ e.eID }}"
                                                                    name="deleteExecutionValue">
                                                             <button type="submit" name="deleteExecution"
                                                                     class="btn btn-primary fa fa-trash">
@@ -163,7 +165,7 @@
                                                     <td>
                                                         <form method="POST">
                                                             {% csrf_token %}
-                                                            <input hidden value="{{ e.jobID }}"
+                                                            <input hidden value="{{ e.eID }}"
                                                                    name="deleteExecutionValue">
                                                             <button type="submit" name="deleteExecution"
                                                                     class="btn btn-primary fa fa-trash">
@@ -219,7 +221,7 @@
                                                     <td>
                                                         <form method="POST">
                                                             {% csrf_token %}
-                                                            <input hidden value="{{ e.jobID }}"
+                                                            <input hidden value="{{ e.eID }}"
                                                                    name="deleteExecutionValue">
                                                             <button type="submit" name="deleteExecution"
                                                                     class="btn btn-primary fa fa-trash">
@@ -274,7 +276,7 @@
                                                     <td>
                                                         <form method="POST">
                                                             {% csrf_token %}
-                                                            <input hidden value="{{ e.jobID }}"
+                                                            <input hidden value="{{ e.eID }}"
                                                                    name="deleteExecutionValue">
                                                             <button type="submit" name="deleteExecution"
                                                                     class="btn btn-primary fa fa-trash">

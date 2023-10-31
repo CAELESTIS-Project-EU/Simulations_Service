@@ -5,39 +5,35 @@
         <div class="card" style="border-radius: 15px;">
             <div class="card-body p-5">
                 <h2 class="text-center mb-5" style="text-decoration: underline;">
-                           <button type="button" class="btn btn-primary btn-xl" disabled>NEW MACHINE</button>
+                           <button type="button" class="btn btn-primary btn-xl" disabled>NEW MESH</button>
                 </h2>
                 <div class="wrapper-create-work">
                     <form method="post">
                         {% csrf_token %}
                         <div class="form-group">
-                            <label class="font-weight-bold">USERNAME</label>
-                            {% render_field form.user type="text" class="form-control" placeholder="Insert your username" %}
+                            <label class="font-weight-bold">NAME</label>
+                            {% render_field form.name type="text" class="form-control" placeholder="Insert the name of the new mesh" %}
                         </div>
                         <div class="form-group">
-                            <label class="font-weight-bold">FQDN</label>
-                            {% render_field form.fqdn type="text" class="form-control" placeholder="Insert the machine Fully Qualified Domain Name" %}
+                            <label class="font-weight-bold">PATH</label>
+                            {% render_field form.pathFTP type="text" class="form-control" placeholder="Insert the path on the FTP server of the new mesh" %}
                         </div>
                         <div class="form-group">
-                            <label class="font-weight-bold">WDIR</label>
-                            {% render_field form.wdir type="text" class="form-control" placeholder="Insert the working directory path for the choosen machine" %}
+                            <label class="font-weight-bold">DESCRIPTION</label>
+                            {% render_field form.description type="text" class="form-control" placeholder="Insert a description of the new mesh" %}
                         </div>
                         <div class="form-group">
-                            <label class="font-weight-bold">INSTALLATION DIRECTORY</label>
-                            {% render_field form.installDir type="text" class="form-control" placeholder="Insert the installation directory path for the choosen machine" %}
-                        </div>
-                        <div class="form-group">
-                            <label class="font-weight-bold">DATA DIRECTORY</label>
-                            {% render_field form.dataDir type="text" class="form-control" placeholder="Insert the data directory path for the choosen machine" %}
+                            <label class="font-weight-bold">LAST UPDATE DATE</label>
+                            {% render_field form.dateLastUpdate type="date" class="form-control" placeholder="Insert the last update date of the new mesh" %}
                         </div>
                         {{ form.author.as_hidden }}
 
                         {% if flag == "yes" %}
                             <div title="Some Flag">
                                 <div class="alert alert-warning" role="alert">
-                                    Definition of the machine done!
+                                    Definition of the mesh done!
                                 </div>
-                                <a href="/redefine_machine">
+                                <a href="/meshes">
                                     <button type="button" class="btn btn-success">Continue</button>
                                 </a>
                             </div>
@@ -55,4 +51,3 @@
         </div>
     {% endif %}
 {% endblock %}
-

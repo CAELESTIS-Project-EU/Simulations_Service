@@ -1,7 +1,8 @@
+import ftplib
 import uuid
 from io import StringIO
 from django.shortcuts import render, redirect
-from .forms import CreateUserForm, WorkFlowForm, DocumentForm, ExecutionForm, Key_Gen_Form, Machine_Form
+from .forms import CreateUserForm, WorkFlowForm, DocumentForm, ExecutionForm, Key_Gen_Form, Machine_Form, Mesh_Form
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
@@ -9,7 +10,7 @@ import yaml
 import paramiko
 import time
 import logging
-from accounts.models import Execution, Key_Gen, Machine, Connection
+from accounts.models import Execution, Key_Gen, Machine, Connection, Mesh, userMesh
 from cryptography.fernet import Fernet
 from django.db.models import Q
 import threading
@@ -19,6 +20,8 @@ import re
 import os
 import shutil
 import subprocess
+import configuration as cfg
+from ftplib import FTP_TLS
 
 log = logging.getLogger(__name__)
 
@@ -75,7 +78,6 @@ def logoutUser(request):
 def get_random_string(length):
     # With combination of lower and upper case
     result_str = ''.join(random.choice(string.ascii_letters) for i in range(length))
-    # log.info random string
     return result_str
 
 
@@ -96,16 +98,21 @@ def extract_substring(s):
 
 
 def scp_upload_folder(local_path, remote_path, content, machineID):
-    res= get_github_code()
-    if res:
-        ssh = paramiko.SSHClient()
-        pkey = paramiko.RSAKey.from_private_key(StringIO(content))
-        machine_found = Machine.objects.get(id=machineID)
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(machine_found.fqdn, username=machine_found.user, pkey=pkey)
-        sftp = ssh.open_sftp()
+    res = get_github_code()
+    ssh = paramiko.SSHClient()
+    pkey = paramiko.RSAKey.from_private_key(StringIO(content))
+    machine_found = Machine.objects.get(id=machineID)
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(machine_found.fqdn, username=machine_found.user, pkey=pkey)
+    sftp = ssh.open_sftp()
+    checkFolder = False
+    try:
+        sftp.stat(remote_path)
+        print("Folder exists")
+    except IOError:
+        checkFolder = True
+    if res or checkFolder:
         try:
-            # Create the remote directory if it doesn't exist
             try:
                 sftp.stat(remote_path)
             except FileNotFoundError:
@@ -123,7 +130,6 @@ def scp_upload_folder(local_path, remote_path, content, machineID):
                     local_file = os.path.join(root, file)
                     remote_file = os.path.join(remote_dir, file)
                     sftp.put(local_file, remote_file)
-
             sftp.close()
         except Exception as e:
             log.info(f"Error: {e}")
@@ -134,14 +140,14 @@ def scp_upload_folder(local_path, remote_path, content, machineID):
 def get_github_code():
     script_path = '/var/www/API_REST/gitClone.sh'
     try:
-        #subprocess.run(['bash', script_path], check=True)
+        # subprocess.run(['bash', script_path], check=True)
         result = subprocess.run([script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         # Check the output
-        if "Changes detected. Pulling latest changes..." in result.stdout:
-            log.info("Changes were detected and pulled. Doing other things...")
+        if "Repository not found. Cloning repository..." in result.stdout:
+            return True
+        elif "Changes detected. Pulling latest changes..." in result.stdout:
             return True
         else:
-            log.info("No changes detected or there was an error.")
             if result.stderr:
                 log.info("Error:", result.stderr)
 
@@ -163,6 +169,108 @@ def delete_github_code():
     return
 
 
+"""def get_machine(request):
+    try:
+        float(request.session['machine_chosen'])
+        return Machine.objects.get(id=request.session['machine_chosen']).id
+    except ValueError:
+        user,fqdn=get_name_fqdn(request.session['machine_chosen'])
+        machine_found = Machine.objects.get(author=request.user, user=user, fqdn=fqdn)
+        return machine_found.id"""
+
+
+def get_machine(request):
+    return Machine.objects.get(id=request.session['machine_chosen']).id
+
+
+def get_id_from_string(machine, author):
+    user, fqdn = get_name_fqdn(machine)
+    machine_found = Machine.objects.get(author=author, user=user, fqdn=fqdn)
+    return machine_found.id
+
+
+def get_name_fqdn(machine):
+    user = machine.split("@")[0]
+    fqdn = machine.split("@")[1]
+    return user, fqdn
+
+
+def wdir_folder(principal_folder):
+    uniqueIDfolder = uuid.uuid4()
+    nameWdir = "execution_" + str(uniqueIDfolder)
+    if not principal_folder.endswith("/"):
+        principal_folder = principal_folder + "/"
+    wdirDone = principal_folder + "" + nameWdir
+    return wdirDone, nameWdir
+
+
+class run_sim_async(threading.Thread):
+    def __init__(self, request, name, numNodes, name_sim, execTime, qos, checkpoint_bool, auto_restart_bool, eID):
+        threading.Thread.__init__(self)
+        self.request = request
+        self.name = name
+        self.numNodes = numNodes
+        self.name_sim = name_sim
+        self.execTime = execTime
+        self.qos = qos
+        self.checkpoint_bool = checkpoint_bool
+        self.auto_restart_bool = auto_restart_bool
+        self.eiD = eID
+
+    def run(self):
+        log.info("STARTING")
+        machine_found = Machine.objects.get(id=self.request.session['machine_chosen'])
+        fqdn = machine_found.fqdn
+        machine_folder = extract_substring(fqdn)
+        workflow = read_and_write(self.name)
+        userMachine = machine_found.user
+        workflow_name = workflow.get("workflow_type")
+        principal_folder = machine_found.wdir
+        wdirPath, nameWdir = wdir_folder(principal_folder)
+        cmd1 = "source /etc/profile; mkdir -p " + principal_folder + "/" + nameWdir + "/workflows/; echo " + str(
+            workflow) + " > " + principal_folder + "/" + nameWdir + "/workflows/" + str(
+            workflow_name) + "; cd " + principal_folder + "; BACKUPDIR=$(ls -td ./*/ | head -1); echo EXECUTION_FOLDER:$BACKUPDIR;"
+        ssh = connection(self.request.session["content"], machine_found.id)
+        stdin, stdout, stderr = ssh.exec_command(cmd1)
+
+        execution_folder = wdirPath + "/execution"
+        workflow_folder = wdirPath + "/workflows"
+        Execution.objects.filter(eID=self.eiD).update(wdir=execution_folder, workflow_path= workflow_folder, name_workflow=workflow_name)
+        self.request.session['workflow_path'] = workflow_folder
+
+        path_install_dir = machine_found.installDir
+        param_machine = remove_numbers(machine_found.fqdn)
+
+        local_folder = "/home/ubuntu/installDir"
+
+        scp_upload_folder(local_folder, path_install_dir, self.request.session["content"], machine_found.id)
+
+        if self.checkpoint_bool:
+            cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; mkdir -p " + execution_folder + "; cd " + machine_found.installDir + "/scripts/" + machine_folder + "/;  source app-checkpoint.sh " + userMachine + " " + str(
+                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir
+        else:
+            cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; mkdir -p " + execution_folder + "; cd " + machine_found.installDir + "/scripts/" + machine_folder + "/; source app.sh " + userMachine + " " + str(
+                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir
+        stdin, stdout, stderr = ssh.exec_command(cmd2)
+        stdout = stdout.readlines()
+        s = "Submitted batch job"
+        var = ""
+        while (len(stdout) == 0):
+            time.sleep(1)
+        if (len(stdout) > 1):
+            log.info(stdout)
+            for line in stdout:
+                if (s in line):
+                    jobID = int(line.replace(s, ""))
+                    Execution.objects.filter(eID=self.eiD).update(jobID=jobID, status="PENDING")
+                    self.request.session['jobID'] = jobID
+        self.request.session['execution_folder'] = execution_folder
+        os.remove("documents/" + str(self.name))
+        if self.auto_restart_bool:
+            monitor_checkpoint(var, self.request, self.execTime, machine_found.id)
+        return
+
+
 def run_sim(request):
     if request.method == 'POST':
         checkConnBool = checkConnection(request)
@@ -176,15 +284,6 @@ def run_sim(request):
         form = DocumentForm(request.POST, request.FILES)
         if form.is_valid():
             name = None
-            machine =request.session['machine_chosen']
-            user = machine.split("@")[0]
-            fqdn = machine.split("@")[1]
-            machine_folder = extract_substring(fqdn)
-            machine_found = Machine.objects.get(author=request.user, user=user, fqdn=fqdn)
-            machineID = machine_found.id
-            request.session['machineID'] = machineID
-            request.userMachine = user
-            request.fqdn = fqdn
             for filename, file in request.FILES.items():
                 uniqueID = uuid.uuid4()
                 name = file
@@ -193,94 +292,26 @@ def run_sim(request):
             document = form.save(commit=False)
             document.document.name = name
             document.save()
-            workflow = read_and_write(name)
-            user = request.user
-            userMachine = machine_found.user
-            ssh = connection(request.session["content"], request.session["machineID"])
-            request.session["connection_machine"] = machineID
-            workflow_name = workflow.get("workflow_type")
-            principal_folder = machine_found.wdir
-            uniqueIDfolder = uuid.uuid4()
-            s = "execution_" + str(uniqueIDfolder)
-            if not principal_folder.endswith("/"):
-                principal_folder = principal_folder + "/"
-            wdirDone = principal_folder + "" + s
-            cmd1 = "source /etc/profile; mkdir -p " + principal_folder + "/" + s + "/workflows/; echo " + str(
-                workflow) + " > " + principal_folder + "/" + s + "/workflows/" + str(
-                name) + "; cd " + principal_folder + "; BACKUPDIR=$(ls -td ./*/ | head -1); echo EXECUTION_FOLDER:$BACKUPDIR;"
-            stdin, stdout, stderr = ssh.exec_command(cmd1)
-            stdout = stdout.readlines()
-            execution_folder = wdirDone + "/execution"
-            workflow_folder = wdirDone + "/workflows"
             numNodes = request.POST.get('numNodes')
             name_sim = request.POST.get('name_sim')
-            if name_sim is None:
-                name_sim = get_random_string(8)
+            qos = request.POST.get('qos')
             execTime = request.POST.get('execTime')
             checkpoint_flag = request.POST.get("checkpoint_flag")
+            auto_restart = request.POST.get("auto_restart")
+            if name_sim is None:
+                name_sim = get_random_string(8)
             checkpoint_bool = False
             if checkpoint_flag == "on":
                 checkpoint_bool = True
-
-            auto_restart = request.POST.get("auto_restart")
             auto_restart_bool = False
             if auto_restart == "on":
                 auto_restart_bool = True
-
             if auto_restart_bool:
                 checkpoint_bool = True
-            request.session['workflow_path'] = workflow_folder
-            qos = request.POST.get('qos')
-            path_install_dir = machine_found.installDir
-            param_machine = remove_numbers(machine_found.fqdn)
-
-            local_folder = "/home/ubuntu/installDir"
-
-            scp_upload_folder(local_folder, path_install_dir, request.session["content"], machineID)
-            #delete_github_code()
-
-            if checkpoint_bool:
-                cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; mkdir -p " + execution_folder + "; cd " + machine_found.installDir + "/scripts/" + machine_folder + "/;  source app-checkpoint.sh " + userMachine + " " + str(
-                    name) + " " + workflow_folder + " " + execution_folder + " " + numNodes + " " + execTime + " " + qos + " " + machine_found.installDir
-            else:
-                cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; mkdir -p " + execution_folder + "; cd " + machine_found.installDir + "/scripts/" + machine_folder + "/; source app.sh " + userMachine + " " + str(
-                    name) + " " + workflow_folder + " " + execution_folder + " " + numNodes + " " + execTime + " " + qos + " " + machine_found.installDir
-            stdin, stdout, stderr = ssh.exec_command(cmd2)
-            stdout = stdout.readlines()
-            stderr = stderr.readlines()
-            s = "Submitted batch job"
-            var = ""
-            while (len(stdout) == 0):
-                time.sleep(1)
-            if (len(stdout) > 1):
-                for line in stdout:
-                    if (s in line):
-                        jobID = int(line.replace(s, ""))
-                        var = jobID
-                        request.session['jobID'] = jobID
-                        form = Execution()
-                        form.jobID = request.session['jobID']
-                        form.user = userMachine
-                        form.author = request.user
-                        form.nodes = numNodes
-                        form.status = "PENDING"
-                        form.checkpoint = 0
-                        form.time = "00:00:00"
-                        form.wdir = execution_folder
-                        form.workflow_path = workflow_folder
-                        form.execution_time = int(execTime)
-                        form.name_workflow = str(name)
-                        form.qos = qos
-                        form.name_sim = name_sim
-                        form.autorestart = auto_restart_bool
-                        form.machine = machine_found
-                        form.save()
-            request.session['execution_folder'] = execution_folder
-            log.info("NAME")
-            log.info("API_REST/documents/" + str(name))
-            os.remove("documents/" + str(name))
-            if auto_restart_bool:
-                monitor_checkpoint(var, request, execTime)
+            eID = start_exec(numNodes, name_sim, execTime, qos, name, request, auto_restart_bool)
+            run_sim = run_sim_async(request, name, numNodes, name_sim, execTime, qos, checkpoint_bool,
+                                    auto_restart_bool, eID)
+            run_sim.start()
             return redirect('accounts:executions')
 
     else:
@@ -296,15 +327,46 @@ def run_sim(request):
             return render(request, 'accounts/executions.html',
                           {'machines': machines_done, 'checkConn': "no"})
     return render(request, 'accounts/run_simulation.html',
-                  {'form': form, 'flag': request.session['flag'], 'machines': populate_executions_machines(request), 'machine_chosen':request.session['machine_chosen']})
+                  {'form': form, 'flag': request.session['flag'], 'machines': populate_executions_machines(request),
+                   'machine_chosen': request.session['nameConnectedMachine']})
+
+
+def start_exec(numNodes, name_sim, execTime, qos, name, request, auto_restart_bool):
+    machine_found = Machine.objects.get(id=request.session['machine_chosen'])
+    userMachine = machine_found.user
+    principal_folder = machine_found.wdir
+    log.info("SUBMIT")
+    uID = uuid.uuid4()
+    form = Execution()
+    form.eID = uID
+    form.jobID = 0
+    form.user = userMachine
+    form.author = request.user
+    form.nodes = numNodes
+    form.status = "INITIALIZING"
+    form.checkpoint = 0
+    form.time = "00:00:00"
+    form.wdir = "INITIALIZING"
+    form.workflow_path = "INITIALIZING"
+    form.execution_time = int(execTime)
+    form.name_workflow = "INITIALIZING"
+    form.qos = qos
+    form.name_sim = name_sim
+    form.autorestart = auto_restart_bool
+    form.machine = machine_found
+    form.save()
+    log.info("EXECUTION")
+    log.info(form.wdir)
+    log.info(uID)
+    return uID
 
 
 def results(request):
     if request.method == 'POST':
-        log.info("")
+        log.info("result")
     else:
         jobID = request.session['jobIDdone']
-        ssh = connection(request.session['content'], request.session['machineID'])
+        ssh = connection(request.session['content'], request.session['machine_chosen'])
         executionDone = Execution.objects.all().filter(jobID=jobID)
         stdin, stdout, stderr = ssh.exec_command(
             "sacct -j " + str(jobID) + " --format=jobId,user,nnodes,elapsed,state | sed -n 3,3p")
@@ -327,33 +389,38 @@ def render_right(request):
     return
 
 
-
-
-
-def delete_parent_folder(path,ssh):
-    log.info("DELETE FOLDER")
-    log.info(path)
+def delete_parent_folder(path, ssh):
     parent_folder = os.path.dirname(path)
-    log.info(parent_folder)
-    command="rm -rf "+parent_folder
+    command = "rm -rf " + parent_folder + "/"
+    log.info(command)
     stdin, stdout, stderr = ssh.exec_command(command)
     return
 
-def deleteExecution(jobIDdelete, request):
-    ssh = connection(request.session['content'], request.session['machineID'])
-    command = "scancel " + jobIDdelete
-    stdin, stdout, stderr = ssh.exec_command(command)
-    exec=Execution.objects.filter(jobID=jobIDdelete).get()
+
+def deleteExecution(eIDdelete, request):
+    ssh = connection(request.session['content'], request.session['machine_chosen'])
+    log.info("DELETE")
+    log.info(eIDdelete)
+    exec = Execution.objects.filter(eID=eIDdelete).get()
+    log.info(exec.eID)
+    log.info("DELETE PARENT FOLDER")
+    log.info(exec.jobID)
+    log.info(exec.wdir)
     delete_parent_folder(exec.wdir, ssh)
-    Execution.objects.filter(jobID=jobIDdelete).delete()
+    if exec.eID != 0:
+        command = "scancel " + str(exec.jobID)
+        stdin, stdout, stderr = ssh.exec_command(command)
+    Execution.objects.filter(eID=eIDdelete).delete()
     form = ExecutionForm()
-    executions = Execution.objects.all().filter(author=request.user).filter(Q(status="PENDING") | Q(status="RUNNING"))
+    executions = Execution.objects.all().filter(author=request.user).filter(
+        Q(status="PENDING") | Q(status="RUNNING") | Q(status="INITIALIZING"))
     executionsDone = Execution.objects.all().filter(author=request.user, status="COMPLETED")
     executionsFailed = Execution.objects.all().filter(author=request.user, status="FAILED")
     executionTimeout = Execution.objects.all().filter(author=request.user, status="TIMEOUT", autorestart=False)
     return render(request, 'accounts/executions.html',
                   {'form': form, 'executions': executions, 'executionsDone': executionsDone,
                    'executionsFailed': executionsFailed, 'executionsTimeout': executionTimeout})
+
 
 def executions(request):
     if request.method == 'POST':
@@ -374,13 +441,12 @@ def executions(request):
             request.session['deleteExecutionValue'] = request.POST.get("deleteExecutionValue")
             deleteExecution(request.POST.get("deleteExecutionValue"), request)
         elif 'run_sim' in request.POST:
-            log.info("RUN_SIM CALL")
-            request.session['machine_chosen'] = request.POST.get("machine_chosen_value")
+            request.session['machine_chosen'] = get_id_from_string(request.POST.get("machine_chosen_value"),
+                                                                   request.user)
             return redirect('accounts:run_sim')
 
         elif 'disconnectButton' in request.POST:
             Connection.objects.filter(idConn_id=request.session["idConn"]).update(status="Disconnect")
-            log.info("DISCONECT PHASE")
             for key in list(request.session.keys()):
                 if not key.startswith("_"):  # skip keys set by the django system
                     del request.session[key]
@@ -392,13 +458,9 @@ def executions(request):
             return render(request, 'accounts/executions.html',
                           {'machines': machines_done, 'checkConn': "no"})
         elif 'connection' in request.POST:
-            user = request.POST.get('machineChoice').split("@")[0]
-            fqdn = request.POST.get('machineChoice').split("@")[1]
+            user, fqdn = get_name_fqdn(request.POST.get('machineChoice'))
             machine_found = Machine.objects.get(author=request.user, user=user, fqdn=fqdn)
-            request.session["connection_machine"] = machine_found.id
-            machineID = machine_found.id
-            request.session['machineID'] = machineID
-            obj = Key_Gen.objects.filter(machine_id=machineID).get()
+            obj = Key_Gen.objects.filter(machine_id=machine_found.id).get()
             private_key = obj.private_key
             try:
                 try:
@@ -411,16 +473,13 @@ def executions(request):
                     return render(request, 'accounts/executions.html',
                                   {'form': form, 'machines': machines_done,
                                    'checkConn': request.session["checkConn"],
-                                   'firstCheck': request.session['firstCheck'], "errorToken":'yes'})
-                request.session["content"] = content
-                request.session['machine_chosen']=request.POST.get('machineChoice')
-                ssh = connection(content, machineID)
+                                   'firstCheck': request.session['firstCheck'], "errorToken": 'yes'})
+
             except:
-                log.info("The token is wrong!")
                 return False
-            threadUpdate = updateExecutions(request.POST.get("token"), request.session['machine_chosen'],
-                                            request)
-            threadUpdate.start()
+            request.session["content"] = content
+            request.session['machine_chosen'] = machine_found.id
+
             c = Connection()
             c.user = request.user
             c.status = "Active"
@@ -434,9 +493,11 @@ def executions(request):
             request.session["checkConn"] = "Required"
             return render(request, 'accounts/executions.html',
                           {'machines': machines_done, 'checkConn': "no"})
-        machine_connected = Machine.objects.get(id=request.session["connection_machine"])
+        threadUpdate = updateExecutions(request)
+        threadUpdate.start()
+        machine_connected = Machine.objects.get(id=request.session["machine_chosen"])
         executions = Execution.objects.all().filter(author=request.user, machine=machine_connected).filter(
-            Q(status="PENDING") | Q(status="RUNNING"))
+            Q(status="PENDING") | Q(status="RUNNING") | Q(status="INITIALIZING"))
         executionsDone = Execution.objects.all().filter(author=request.user, status="COMPLETED",
                                                         machine=machine_connected)
         executionsFailed = Execution.objects.all().filter(author=request.user, status="FAILED",
@@ -447,6 +508,7 @@ def executions(request):
                                                               autorestart=True, machine=machine_connected)
         executionsCanceled = Execution.objects.all().filter(author=request.user, status="CANCELLED+",
                                                             checkpoint="-1", machine=machine_connected)
+        request.session['nameConnectedMachine'] = "" + machine_connected.user + "@" + machine_connected.fqdn
         for execution in executionsCanceled:
             checks = Execution.objects.all().get(author=request.user, status="CANCELLED+", checkpoint=execution.jobID,
                                                  machine=machine_connected)
@@ -457,18 +519,16 @@ def executions(request):
         return render(request, 'accounts/executions.html',
                       {'executions': executions, 'executionsDone': executionsDone,
                        'executionsFailed': executionsFailed,
-                       'executionsTimeout': executionTimeout, 'checkConn': "yes", 'machine_chosen':request.session['machine_chosen']})
+                       'executionsTimeout': executionTimeout, 'checkConn': "yes",
+                       'machine_chosen': request.session['nameConnectedMachine']})
     else:
-        log.info("ENTERED HERE")
         form = ExecutionForm()
         machines_done = populate_executions_machines(request)
         if not machines_done:
-            log.info("ENTERED HERE 2")
             request.session['firstCheck'] = "no"
             return render(request, 'accounts/executions.html',
                           {'firstCheck': request.session['firstCheck']})
         elif "content" not in request.session:
-            log.info("ENTERED HERE 3")
             request.session['firstCheck'] = "yes"
             request.session["checkConn"] = "no"
             return render(request, 'accounts/executions.html',
@@ -476,22 +536,20 @@ def executions(request):
                            'checkConn': request.session["checkConn"],
                            'firstCheck': request.session['firstCheck']})
         else:
-            log.info("ENTERED HERE 4")
-            log.info(request.session['machine_chosen'])
             checkConnBool = checkConnection(request)
             if not checkConnBool:
-                log.info("ENTERED HERE 5")
                 machines_done = populate_executions_machines(request)
                 if not machines_done:
                     request.session['firstCheck'] = "no"
                 request.session["checkConn"] = "Required"
                 return render(request, 'accounts/executions.html',
-                              {'machines': machines_done, 'checkConn': "no", 'machine_chosen':request.POST.get('machineChoice')})
+                              {'machines': machines_done, 'checkConn': "no",
+                               'machine_chosen': request.POST.get('machineChoice')})
 
-            machine_connected = Machine.objects.get(id=request.session["connection_machine"])
-
+            machine_connected = Machine.objects.get(id=get_machine(request))
+            request.session['nameConnectedMachine'] = "" + machine_connected.user + "@" + machine_connected.fqdn
             executions = Execution.objects.all().filter(author=request.user, machine=machine_connected).filter(
-                Q(status="PENDING") | Q(status="RUNNING"))
+                Q(status="PENDING") | Q(status="RUNNING") | Q(status="INITIALIZING"))
             executionsDone = Execution.objects.all().filter(author=request.user, machine=machine_connected,
                                                             status="COMPLETED")
             executionsFailed = Execution.objects.all().filter(author=request.user, machine=machine_connected,
@@ -517,7 +575,8 @@ def executions(request):
     return render(request, 'accounts/executions.html',
                   {'form': form, 'executions': executions, 'executionsDone': executionsDone,
                    'executionsFailed': executionsFailed, 'executionsTimeout': executionTimeout,
-                   "checkConn": request.session["checkConn"], 'machine_chosen':request.session['machine_chosen']})
+                   "checkConn": request.session["checkConn"],
+                   'machine_chosen': request.session['nameConnectedMachine']})
 
 
 def populate_executions_machines(request):
@@ -530,47 +589,32 @@ def populate_executions_machines(request):
 
 
 class updateExecutions(threading.Thread):
-    def __init__(self, token, machine, request):
+    def __init__(self, request):
         threading.Thread.__init__(self)
-        self.token = token
-        self.machine = machine
         self.request = request
         self.timeout = 120 * 60
 
     def run(self):
         timeout_start = time.time()
         while time.time() < timeout_start + self.timeout:
-            boolException = update_table(self.token, self.machine, self.request)
+            boolException = update_table(self.request)
             if not boolException:
                 break
-            time.sleep(2)
+            time.sleep(10)
         Connection.objects.filter(idConn_id=self.request.session["idConn"]).update(status="Disconnect")
         render_right(self.request)
         return
 
 
-def update_table(token, machine, request):
-    user = machine.split("@")[0]
-    fqdn = machine.split("@")[1]
-    machine_found = Machine.objects.get(author=request.user, user=user, fqdn=fqdn)
-    request.session["connection_machine"] = machine_found.id
+def update_table(request):
+    machine_found = Machine.objects.get(id=request.session['machine_chosen'])
     machineID = machine_found.id
-    request.session['machineID'] = machineID
-    obj = Key_Gen.objects.filter(machine_id=machineID).get()
-    private_key = obj.private_key
-    userMachine = machine_found.user
-    try:
-        try:
-            content = decrypt(private_key, token).decode()
-        except Exception:
-            return redirect('accounts:executions', {"errorToken":'yes'})
-        request.session["content"] = content
-    except:
-        log.info("The token is wrong!")
-        return redirect('accounts:executions', {"errorToken": 'yes'})
-    ssh = connection(content, machineID)
-    executions = Execution.objects.all().filter(author=request.user)
+    ssh = connection(request.session["content"], machineID)
+    executions = Execution.objects.all().filter(author=request.user, machine=request.session['machine_chosen']).filter(
+        Q(status="PENDING") | Q(status="RUNNING"))
+    log.info(executions)
     for executionE in executions:
+        log.info(executionE.jobID)
         stdin, stdout, stderr = ssh.exec_command(
             "sacct -j " + str(executionE.jobID) + " --format=jobId,user,nnodes,elapsed,state | sed -n 3,3p")
         stdout = stdout.readlines()
@@ -588,7 +632,7 @@ def connection(content, machineID):
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh.connect(machine_found.fqdn, username=machine_found.user, pkey=pkey)
     except:
-        return redirect('accounts:executions', {"errorToken":'yes'})
+        return redirect('accounts:executions', {"errorToken": 'yes'})
     return ssh
 
 
@@ -601,13 +645,16 @@ def checkpointingFinished(execution, request):
         return
 
 
-def stopExecution(jobIDstop, request):
-    ssh = connection(request.session['content'], request.session['machineID'])
-    command = "scancel " + jobIDstop
-    stdin, stdout, stderr = ssh.exec_command(command)
-    Execution.objects.filter(jobID=jobIDstop).update(status="CANCELLED+")
+def stopExecution(eIDstop, request):
+    ssh = connection(request.session['content'], request.session['machine_chosen'])
+    exec = Execution.objects.filter(eID=eIDstop).get()
+    if exec.eID != 0:
+        command = "scancel " + str(exec.jobID)
+        stdin, stdout, stderr = ssh.exec_command(command)
+    Execution.objects.filter(eID=eIDstop).update(status="CANCELLED+")
     form = ExecutionForm()
-    executions = Execution.objects.all().filter(author=request.user).filter(Q(status="PENDING") | Q(status="RUNNING"))
+    executions = Execution.objects.all().filter(author=request.user).filter(
+        Q(status="PENDING") | Q(status="RUNNING") | Q(status="INITIALIZING"))
     executionsDone = Execution.objects.all().filter(author=request.user, status="COMPLETED")
     executionsFailed = Execution.objects.all().filter(author=request.user, status="FAILED")
     executionTimeout = Execution.objects.all().filter(author=request.user, status="TIMEOUT", autorestart=False)
@@ -616,39 +663,40 @@ def stopExecution(jobIDstop, request):
                    'executionsFailed': executionsFailed, 'executionsTimeout': executionTimeout})
 
 
-class myThread(threading.Thread):
-    def __init__(self, jobID, request, time):
+class auto_restart_thread(threading.Thread):
+    def __init__(self, jobID, request, time, machine_id):
         threading.Thread.__init__(self)
         self.jobID = jobID
         self.request = request
         self.time = time
+        self.machine_id = machine_id
 
     def run(self):
         time.sleep(int(self.time) * 60)
-        wait_timeout_new(self.jobID, self.request)
+        wait_timeout_new(self.jobID, self.request, self.machine_id)
         return
 
 
-def wait_timeout_new(jobID, request):
+def wait_timeout_new(jobID, request, machine_id):
     execution = Execution.objects.get(jobID=jobID)
     if execution.status != "TIMEOUT":
         time.sleep(15)
         wait_timeout_new(jobID, request)
     else:
-        checkpointing(jobIDCheckpoint=jobID, request=request)
+        checkpointing(jobID, request, machine_id)
     return
 
 
-def monitor_checkpoint(jobID, request, execTime):
-    thread1 = myThread(jobID, request, execTime)
-    thread1.start()
+def monitor_checkpoint(jobID, request, execTime, machine):
+    auto_restart_obj = auto_restart_thread(jobID, request, execTime, machine)
+    auto_restart_obj.start()
     return
 
 
-def checkpointing(jobIDCheckpoint, request):
-    ssh = connection(request.session['content'], request.session['machineID'])
+def checkpointing(jobIDCheckpoint, request, machine_id):
+    ssh = connection(request.session['content'], machine_id)
     checkpointID = Execution.objects.all().get(author=request.user, jobID=jobIDCheckpoint)
-    machine_connected = Machine.objects.get(id=request.session["connection_machine"])
+    machine_connected = Machine.objects.get(id=machine_id)
     machine_folder = extract_substring(machine_connected.fqdn)
     command = "source /etc/profile; cd " + machine_connected.installDir + "/scripts/" + machine_folder + "/; sh app-checkpoint.sh " + checkpointID.user + " " + checkpointID.name_workflow + " " + checkpointID.workflow_path + " " + checkpointID.wdir + " " + str(
         checkpointID.nodes) + " " + str(
@@ -684,14 +732,15 @@ def checkpointing(jobIDCheckpoint, request):
     checkpointID = Execution.objects.all().get(author=request.user, jobID=jobIDCheckpoint)
     checkpointID.status = "CONTINUE"
     checkpointID.save()
-    monitor_checkpoint(jobID=request.session['jobID'], request=request, execTime=time)
+    monitor_checkpoint(request.session['jobID'], request, time, machine_id)
     return
 
 
 def checkpointing_noAutorestart(jobIDCheckpoint, request):
-    ssh = connection(request.session['content'], request.session['machineID'])
+    ssh = connection(request.session['content'], request.session['machine_chosen'])
     checkpointID = Execution.objects.all().get(author=request.user, jobID=jobIDCheckpoint)
-    machine_connected = Machine.objects.get(id=request.session["connection_machine"])
+    machine = get_machine(request.session['machine_chosen'])
+    machine_connected = Machine.objects.get(id=machine.id)
     machine_folder = extract_substring(machine_connected.fqdn)
     command = "source /etc/profile; cd " + machine_connected.installDir + "/scripts/" + machine_folder + "/; sh app-checkpoint.sh " + checkpointID.user + " " + checkpointID.name_workflow + " " + checkpointID.workflow_path + " " + checkpointID.wdir + " " + str(
         checkpointID.nodes) + " " + str(
@@ -735,7 +784,7 @@ def execution_failed(request):  # used to show a page when a execution ended wit
         log.info("")
     else:
         jobID = request.session['jobIDfailed']
-        ssh = connection(request.session['content'], request.session['machineID'])
+        ssh = connection(request.session['content'], request.session['machine_chosen'])
         executionDone = Execution.objects.all().filter(jobID=jobID)
         stdin, stdout, stderr = ssh.exec_command(
             "sacct -j " + str(jobID) + " --format=jobId,user,nnodes,elapsed,state | sed -n 3,3p")
@@ -895,7 +944,7 @@ def redefine_machine(request):  # method to redefine the details of a Machine
             request.session['machineID'] = machineID
             form = Machine_Form(
                 initial={'fqdn': machine_found.fqdn, 'user': machine_found.user, 'wdir': machine_found.wdir,
-                         'installDir': machine_found.installDir,
+                         'installDir': machine_found.installDir, 'dataDir': machine_found.dataDir,
                          'id': machine_found.id, 'author': machine_found.author})
             return render(request, 'accounts/redefine_machine.html',
                           {'form': form, 'firstPhase': request.session['firstPhase'],
@@ -907,8 +956,10 @@ def redefine_machine(request):  # method to redefine the details of a Machine
                 fqdnForm = form['fqdn'].value()
                 wdirForm = form['wdir'].value()
                 installDirForM = form['installDir'].value()
+                dataDirForM = form['dataDir'].value()
                 Machine.objects.filter(id=request.session['machineID']).update(user=userForm, wdir=wdirForm,
-                                                                               fqdn=fqdnForm, installDir=installDirForM)
+                                                                               fqdn=fqdnForm, installDir=installDirForM,
+                                                                               dataDir=dataDirForM)
                 return render(request, 'accounts/redefine_machine.html',
                               {'form': form, 'firstPhase': request.session['firstPhase'], 'flag': 'yes',
                                'noMachines': request.session['noMachines']})
@@ -924,6 +975,78 @@ def redefine_machine(request):  # method to redefine the details of a Machine
     return render(request, 'accounts/redefine_machine.html',
                   {'form': form, 'machines': machines_done, 'noMachines': request.session['noMachines'],
                    'firstPhase': request.session['firstPhase']})
+
+
+def meshes(request):
+    if request.method == 'POST':
+        if 'deleteMesh' in request.POST:
+            request.session['deleteMeshValue'] = request.POST.get("deleteMeshValue")
+            deleteMesh(request.POST.get("deleteMeshValue"), request)
+        elif 'downloadMesh' in request.POST:
+            request.session['downloadMeshValue'] = request.POST.get("downloadMeshValue")
+            downloadMesh(request.POST.get("downloadMeshValue"), request)
+        elif 'modifyMesh' in request.POST:
+            request.session['modifyMeshValue'] = request.POST.get("modifyMeshValue")
+            modifyMesh(request.POST.get("modifyMeshValue"), request)
+        meshesAvailable = populate_meshes()
+        meshesUser = populate_meshes_user(request)
+        if meshesAvailable or meshesUser:
+            return render(request, 'accounts/meshes.html',
+                          {'MeshesAvailable': meshesAvailable, 'meshesUser': meshesUser})
+        else:
+            return render(request, 'accounts/meshes.html', {'firstMeshCheck': 'yes'})
+    else:
+        meshesAvailable = populate_meshes()
+        meshesUser = populate_meshes_user(request)
+        if meshesAvailable or meshesUser:
+            return render(request, 'accounts/meshes.html',
+                          {'MeshesAvailable': meshesAvailable, 'meshesUser': meshesUser})
+        else:
+            return render(request, 'accounts/meshes.html', {'firstMeshCheck': 'yes'})
+
+
+def deleteMesh(idMesh, request):
+    Mesh.objects.filter(mesh_id=idMesh).delete()
+    return
+
+
+def downloadMesh(idMesh, request):
+    return render(request, 'accounts/meshes.html')
+
+
+def modifyMesh(idMesh, request):
+    return render(request, 'accounts/redefine_mesh.html')
+
+
+def mesh_definition(request):
+    if request.method == 'POST':
+        form = Mesh_Form(request.POST)
+        form.author = request.user
+        if form.is_valid():
+            instance = form.save(commit=False)
+            instance.user = request.user
+            instance.save()
+            return render(request, 'accounts/mesh_definition.html', {'form': form, 'flag': 'yes'})
+    else:
+        form = Mesh_Form()
+        return render(request, 'accounts/mesh_definition.html', {'form': form})
+
+
+def redefine_mesh(request):
+    if request.method == 'POST':
+        return render(request, 'accounts/redefine_mesh.html')
+    else:
+        return render(request, 'accounts/redefine_mesh.html')
+
+
+def populate_meshes():
+    meshes = Mesh.objects.all()
+    return meshes
+
+
+def populate_meshes_user(request):
+    meshesUser = userMesh.objects.all().filter(user=request.user)
+    return meshesUser
 
 
 def home(request):
@@ -951,3 +1074,274 @@ def remove_numbers(input_str):
         # If there are not enough parts, return the original string
         return input_str
 
+
+def ftp_download():
+    client = FTP_TLS()
+    client.connect(host=cfg.host, port=cfg.port)
+    client.login(user=cfg.user, passwd=cfg.passw)
+    client.dir()
+    client.cwd(cfg.folder)
+    client.prot_p()
+
+    remote_folder_path = '/home/bsc19/bsc19518/installWorkflow/meshs'
+    local_target_directory = 'local_folder'
+
+    download_folder(client, remote_folder_path, local_target_directory)
+
+    client.quit()
+
+
+def upload_folder(ftp, folder_path):
+    for item in os.listdir(folder_path):
+        item_path = os.path.join(folder_path, item)
+        if os.path.isdir(item_path):
+            try:
+                ftp.mkd(item)  # Try to create directory
+            except Exception as e:
+                print(f"Could not create directory {item}: {e}")
+            ftp.cwd(item)  # Change to the directory
+            upload_folder(ftp, item_path)  # Recursive call to upload folder's content
+            ftp.cwd('..')  # Change back to parent directory
+        else:
+            with open(item_path, 'rb') as file:
+                ftp.storbinary(f'STOR {item}', file)  # Upload file
+
+
+def download_folder(ftp, path, local_target_directory):
+    if not os.path.exists(local_target_directory):
+        os.makedirs(local_target_directory)
+
+    # Change to the target directory on FTP
+    ftp.cwd(path)
+
+    # List items in the directory
+    items = ftp.nlst()
+
+    for item in items:
+        local_path = os.path.join(local_target_directory, item)
+        if is_folder(ftp, item):
+            # Recursive call to download folder
+            download_folder(ftp, item, local_path)
+        else:
+            # Download file
+            with open(local_path, 'wb') as f:
+                ftp.retrbinary('RETR ' + item, f.write)
+
+    # Go back to the parent directory
+    ftp.cwd('..')
+
+
+def is_folder(ftp, name):
+    current = ftp.pwd()
+    try:
+        ftp.cwd(name)  # Try to change directory
+        ftp.cwd(current)  # Change back to the original directory
+        return True
+    except ftplib.error_perm:
+        return False
+
+
+"""def run_sim_backup(request):
+    if request.method == 'POST':
+        checkConnBool = checkConnection(request)
+        if not checkConnBool:
+            machines_done = populate_executions_machines(request)
+            if not machines_done:
+                request.session['firstCheck'] = "no"
+            request.session["checkConn"] = "Required"
+            return render(request, 'accounts/executions.html',
+                          {'machines': machines_done, 'checkConn': "no"})
+        form = DocumentForm(request.POST, request.FILES)
+        if form.is_valid():
+            name = None
+            machine = request.session['machine_chosen']
+            user = machine.split("@")[0]
+            fqdn = machine.split("@")[1]
+            machine_folder = extract_substring(fqdn)
+            machine_found = Machine.objects.get(author=request.user, user=user, fqdn=fqdn)
+            machineID = machine_found.id
+            request.session['machineID'] = machineID
+            request.userMachine = user
+            request.fqdn = fqdn
+            for filename, file in request.FILES.items():
+                uniqueID = uuid.uuid4()
+                name = file
+                nameE = (str(name).split(".")[0]) + "_" + str(uniqueID) + "." + str(name).split(".")[1]
+                name = nameE
+            document = form.save(commit=False)
+            document.document.name = name
+            document.save()
+            workflow = read_and_write(name)
+            user = request.user
+            userMachine = machine_found.user
+            ssh = connection(request.session["content"], request.session["machineID"])
+            request.session["connection_machine"] = machineID
+            workflow_name = workflow.get("workflow_type")
+            principal_folder = machine_found.wdir
+            uniqueIDfolder = uuid.uuid4()
+            s = "execution_" + str(uniqueIDfolder)
+            if not principal_folder.endswith("/"):
+                principal_folder = principal_folder + "/"
+            wdirDone = principal_folder + "" + s
+            cmd1 = "source /etc/profile; mkdir -p " + principal_folder + "/" + s + "/workflows/; echo " + str(
+                workflow) + " > " + principal_folder + "/" + s + "/workflows/" + str(
+                name) + "; cd " + principal_folder + "; BACKUPDIR=$(ls -td ./*/ | head -1); echo EXECUTION_FOLDER:$BACKUPDIR;"
+            stdin, stdout, stderr = ssh.exec_command(cmd1)
+            stdout = stdout.readlines()
+            execution_folder = wdirDone + "/execution"
+            workflow_folder = wdirDone + "/workflows"
+            numNodes = request.POST.get('numNodes')
+            name_sim = request.POST.get('name_sim')
+            if name_sim is None:
+                name_sim = get_random_string(8)
+            execTime = request.POST.get('execTime')
+            checkpoint_flag = request.POST.get("checkpoint_flag")
+            checkpoint_bool = False
+            if checkpoint_flag == "on":
+                checkpoint_bool = True
+
+            auto_restart = request.POST.get("auto_restart")
+            auto_restart_bool = False
+            if auto_restart == "on":
+                auto_restart_bool = True
+
+            if auto_restart_bool:
+                checkpoint_bool = True
+            request.session['workflow_path'] = workflow_folder
+            qos = request.POST.get('qos')
+            path_install_dir = machine_found.installDir
+            param_machine = remove_numbers(machine_found.fqdn)
+
+            local_folder = "/home/ubuntu/installDir"
+
+            scp_upload_folder(local_folder, path_install_dir, request.session["content"], machineID)
+            # delete_github_code()
+
+            if checkpoint_bool:
+                cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; mkdir -p " + execution_folder + "; cd " + machine_found.installDir + "/scripts/" + machine_folder + "/;  source app-checkpoint.sh " + userMachine + " " + str(
+                    name) + " " + workflow_folder + " " + execution_folder + " " + numNodes + " " + execTime + " " + qos + " " + machine_found.installDir
+            else:
+                cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; mkdir -p " + execution_folder + "; cd " + machine_found.installDir + "/scripts/" + machine_folder + "/; source app.sh " + userMachine + " " + str(
+                    name) + " " + workflow_folder + " " + execution_folder + " " + numNodes + " " + execTime + " " + qos + " " + machine_found.installDir
+            stdin, stdout, stderr = ssh.exec_command(cmd2)
+            stdout = stdout.readlines()
+            stderr = stderr.readlines()
+            s = "Submitted batch job"
+            var = ""
+            while (len(stdout) == 0):
+                time.sleep(1)
+            if (len(stdout) > 1):
+                for line in stdout:
+                    if (s in line):
+                        jobID = int(line.replace(s, ""))
+                        var = jobID
+                        request.session['jobID'] = jobID
+                        form = Execution()
+                        form.jobID = request.session['jobID']
+                        form.user = userMachine
+                        form.author = request.user
+                        form.nodes = numNodes
+                        form.status = "PENDING"
+                        form.checkpoint = 0
+                        form.time = "00:00:00"
+                        form.wdir = execution_folder
+                        form.workflow_path = workflow_folder
+                        form.execution_time = int(execTime)
+                        form.name_workflow = str(name)
+                        form.qos = qos
+                        form.name_sim = name_sim
+                        form.autorestart = auto_restart_bool
+                        form.machine = machine_found
+                        form.save()
+            request.session['execution_folder'] = execution_folder
+            os.remove("documents/" + str(name))
+            if auto_restart_bool:
+                monitor_checkpoint(var, request, execTime)
+            return redirect('accounts:executions')
+
+    else:
+        form = DocumentForm()
+        request.session['flag'] = 'first'
+
+        checkConnBool = checkConnection(request)
+        if not checkConnBool:
+            machines_done = populate_executions_machines(request)
+            if not machines_done:
+                request.session['firstCheck'] = "no"
+            request.session["checkConn"] = "Required"
+            return render(request, 'accounts/executions.html',
+                          {'machines': machines_done, 'checkConn': "no"})
+    return render(request, 'accounts/run_simulation.html',
+                  {'form': form, 'flag': request.session['flag'], 'machines': populate_executions_machines(request),
+                   'machine_chosen': request.session['machine_chosen']})"""
+
+"""    def run(self):
+        machine_found=Machine.objects.get(id=self.request.session['machine_chosen'])
+        fqdn= machine_found.fqdn
+        machine_folder = extract_substring(fqdn)
+        workflow = read_and_write(self.name)
+        userMachine = machine_found.user
+        workflow_name = workflow.get("workflow_type")
+        principal_folder = machine_found.wdir
+        wdirPath, nameWdir = wdir_folder(principal_folder)
+        cmd1 = "source /etc/profile; mkdir -p " + principal_folder + "/" + nameWdir + "/workflows/; echo " + str(
+            workflow) + " > " + principal_folder + "/" + nameWdir + "/workflows/" + str(
+            workflow_name) + "; cd " + principal_folder + "; BACKUPDIR=$(ls -td ./*/ | head -1); echo EXECUTION_FOLDER:$BACKUPDIR;"
+        log.info("4")
+        ssh = connection(self.request.session["content"], machine_found.id)
+        log.info(cmd1)
+        stdin, stdout, stderr = ssh.exec_command(cmd1)
+        execution_folder = wdirPath + "/execution"
+        workflow_folder = wdirPath + "/workflows"
+
+        self.request.session['workflow_path'] = workflow_folder
+
+        path_install_dir = machine_found.installDir
+        param_machine = remove_numbers(machine_found.fqdn)
+
+        local_folder = "/home/ubuntu/installDir"
+
+        scp_upload_folder(local_folder, path_install_dir, self.request.session["content"], machine_found.id)
+
+        if self.checkpoint_bool:
+            cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; mkdir -p " + execution_folder + "; cd " + machine_found.installDir + "/scripts/" + machine_folder + "/;  source app-checkpoint.sh " + userMachine + " " + str(
+                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir
+        else:
+            cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; mkdir -p " + execution_folder + "; cd " + machine_found.installDir + "/scripts/" + machine_folder + "/; source app.sh " + userMachine + " " + str(
+                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir
+        log.info(cmd2)
+        stdin, stdout, stderr = ssh.exec_command(cmd2)
+        stdout = stdout.readlines()
+        s = "Submitted batch job"
+        var = ""
+        while (len(stdout) == 0):
+            time.sleep(1)
+        if (len(stdout) > 1):
+            for line in stdout:
+                if (s in line):
+                    jobID = int(line.replace(s, ""))
+                    var = jobID
+                    self.request.session['jobID'] = jobID
+                    form = Execution()
+                    form.jobID = self.request.session['jobID']
+                    form.user = userMachine
+                    form.author = self.request.user
+                    form.nodes = self.numNodes
+                    form.status = "PENDING"
+                    form.checkpoint = 0
+                    form.time = "00:00:00"
+                    form.wdir = execution_folder
+                    form.workflow_path = workflow_folder
+                    form.execution_time = int(self.execTime)
+                    form.name_workflow = str(self.name)
+                    form.qos = self.qos
+                    form.name_sim = self.name_sim
+                    form.autorestart = self.auto_restart_bool
+                    form.machine = machine_found
+                    form.save()
+        self.request.session['execution_folder'] = execution_folder
+        os.remove("documents/" + str(self.name))
+        if self.auto_restart_bool:
+            monitor_checkpoint(var, self.request, self.execTime, machine_found.id)
+        return
+"""
