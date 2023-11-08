@@ -18,10 +18,10 @@ import random
 import string
 import re
 import os
-import shutil
 import subprocess
 import configuration as cfg
 from ftplib import FTP_TLS
+from rest_framework.authtoken.models import Token
 
 log = logging.getLogger(__name__)
 
@@ -60,11 +60,13 @@ def registerPage(request):
     if request.method == 'POST':
         form = CreateUserForm(request.POST)
         if form.is_valid():
-            form.save()
-            messages.success(request, f'Your account has been created. You can log in now!')
-            return redirect('accounts:home')
+            user = form.save()
+
+            messages.success(request, 'Your account has been created! You can log in now!')
+            return redirect('accounts:login', )  # Pass the token key as context
     else:
         form = CreateUserForm()
+
     return render(request, 'accounts/registerpage.html', {'form': form})
 
 
@@ -137,6 +139,61 @@ def scp_upload_folder(local_path, remote_path, content, machineID):
         log.info("The code is already up to date! No git clone needed!")
 
 
+def scp_upload_input_folder(local_path, remote_path, content, machineID):
+    ssh = paramiko.SSHClient()
+    pkey = paramiko.RSAKey.from_private_key(StringIO(content))
+    machine_found = Machine.objects.get(id=machineID)
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(machine_found.fqdn, username=machine_found.user, pkey=pkey)
+    sftp = ssh.open_sftp()
+    checkFolder = False
+    try:
+        sftp.stat(remote_path)
+        log.info("Folder exists")
+    except IOError:
+        checkFolder = True
+    if checkFolder:
+        try:
+            try:
+                sftp.stat(remote_path)
+            except FileNotFoundError:
+                sftp.mkdir(remote_path)
+            # Recursively upload the local  folder and its contents
+            for root, dirs, files in os.walk(local_path):
+                remote_dir = os.path.join(remote_path, os.path.relpath(root, local_path))
+                try:
+                    sftp.stat(remote_dir)
+                except FileNotFoundError:
+                    sftp.mkdir(remote_dir)
+                for file in files:
+                    local_file = os.path.join(root, file)
+                    remote_file = os.path.join(remote_dir, file)
+                    sftp.put(local_file, remote_file)
+            sftp.close()
+        except Exception as e:
+            log.info(f"Error: {e}")
+    else:
+        log.info("The input files are already up to date!")
+
+
+def api_token(request):
+    if request.method == 'POST':
+        try:
+            token = Token.objects.get(user=request.user)
+            token.delete()
+        except Token.DoesNotExist:
+            log.info("Token does not exist.")
+
+        # Create a new token
+        token, created = Token.objects.get_or_create(user=request.user)
+
+        # The render call should include the request as the first parameter
+        return render(request, 'accounts/token-api.html', {'token': token.key})
+
+    # For a GET request, just show the page without the token context
+    return render(request, 'accounts/token-api.html')
+
+
 def get_github_code():
     script_path = '/var/www/API_REST/gitClone.sh'
     try:
@@ -169,16 +226,6 @@ def delete_github_code():
     return
 
 
-"""def get_machine(request):
-    try:
-        float(request.session['machine_chosen'])
-        return Machine.objects.get(id=request.session['machine_chosen']).id
-    except ValueError:
-        user,fqdn=get_name_fqdn(request.session['machine_chosen'])
-        machine_found = Machine.objects.get(author=request.user, user=user, fqdn=fqdn)
-        return machine_found.id"""
-
-
 def get_machine(request):
     return Machine.objects.get(id=request.session['machine_chosen']).id
 
@@ -188,6 +235,44 @@ def get_id_from_string(machine, author):
     machine_found = Machine.objects.get(author=author, user=user, fqdn=fqdn)
     return machine_found.id
 
+
+def get_status(eID, request):
+    machine_found = Machine.objects.get(id=request.session['machine_chosen'])
+    machineID = machine_found.id
+    ssh = connection(request.session["content"], machineID)
+    executions = Execution.objects.all().filter(author=request.user, machine=request.session['machine_chosen']).filter(
+        Q(status="PENDING") | Q(status="RUNNING") | Q(status="INITIALIZING"))
+    for executionE in executions:
+        log.info(executionE.jobID)
+        if executionE.jobID != 0:
+            stdin, stdout, stderr = ssh.exec_command(
+                "sacct -j " + str(executionE.jobID) + " --format=jobId,user,nnodes,elapsed,state | sed -n 3,3p")
+            stdout = stdout.readlines()
+            values = str(stdout).split()
+            Execution.objects.filter(jobID=executionE.jobID).update(status=values[4], time=values[3],
+                                                                    nodes=int(values[2]))
+    execution = Execution.objects.get(eID=eID)
+    return execution
+
+def stop_execution_api(eID, request):
+    ssh = connection(request.session['content'], request.session['machine_chosen'])
+    try:
+        exec = Execution.objects.filter(eID=eID).get()
+        if exec.eID != 0:
+            command = "scancel " + str(exec.jobID)
+            stdin, stdout, stderr = ssh.exec_command(command)
+        Execution.objects.filter(eID=eID).update(status="CANCELLED+")
+    except:
+        raise ValueError("The execution doesn't exist", 0)
+    return True
+
+def restart_execution_api(eID, request):
+    exec = Execution.objects.filter(eID=eID).get()
+    if exec.jobID!=0:
+        checkpointing_noAutorestart(exec.jobID, request)
+    else:
+        raise ValueError("The execution is in the initialing phase", 0)
+    return
 
 def get_name_fqdn(machine):
     user = machine.split("@")[0]
@@ -202,6 +287,101 @@ def wdir_folder(principal_folder):
         principal_folder = principal_folder + "/"
     wdirDone = principal_folder + "" + nameWdir
     return wdirDone, nameWdir
+
+
+def ensure_local_directory_exists(path):
+    if not os.path.exists(path):
+        os.makedirs(path)
+
+
+def download_folder(ftp_conn, ftp_folder_path, local_folder_path):
+    ensure_local_directory_exists(local_folder_path)
+    # List items in the FTP directory
+    items = ftp_conn.nlst(ftp_folder_path)
+    for item in items:
+        local_item_path = os.path.join(local_folder_path, os.path.basename(item))
+        ftp_item_path = item
+
+        # Check if the item is a file or a folder
+        if '.' in os.path.basename(item):  # Assuming files have extensions
+            with open(local_item_path, 'wb') as file:
+                ftp_conn.retrbinary(f'RETR {ftp_item_path}', file.write)
+        else:
+            download_folder(ftp_conn, ftp_item_path, local_item_path)
+    return
+
+
+def extract_path_and_filename(url):
+    match = re.match(r'^ftp://[^/]+(/.+?)/([^/]+)$', url)
+    if match:
+        path = match.group(1)
+        filename = match.group(2)
+        return path, filename
+    else:
+        return None, None
+
+
+def is_file_with_extension(filename):
+    return '.' in filename
+
+
+def download_input(workflow, request, machineID):
+    log.info("START INPUT")
+    client = FTP_TLS()
+    try:
+        log.info("HERE")
+        client.connect(host=cfg.host, port=cfg.port)
+        log.info("HERE 2")
+        client.login(user=cfg.user, passwd=cfg.passw)
+        log.info("HERE 3")
+    except ConnectionError as conn_error:
+        # Handle connection-related errors
+        log.info(f"Connection Error: {conn_error}")
+
+    except TimeoutError as timeout_error:
+        # Handle timeout-related errors
+        log.info(f"Timeout Error: {timeout_error}")
+    except Exception as e:
+        # Handle other exceptions
+        log.info(f"An error occurred: {e}")
+    local_target_directory = '/home/ubuntu/inputFiles/'
+    client.prot_p()  # Switch to secure data connection
+    machine_found = Machine.objects.get(id=request.session['machine_chosen'])
+    log.info("HEREEEE")
+    log.info(workflow['input'].items())
+    for key, url in workflow['input'].items():
+        path, filename = extract_path_and_filename(url)
+        log.info("INPUT FILES")
+        log.info(path)
+        log.info(filename)
+        if path and filename:
+            log.info(f"{key}:")
+            log.info("Path:", path)
+            log.info("Filename:", filename)
+            if is_file_with_extension(filename):
+                log.info("Type: File")
+                last_dir = os.path.basename(os.path.normpath(path))
+                full_path_to_check = os.path.join(local_target_directory, last_dir)
+                if os.path.exists(full_path_to_check) and os.path.isdir(full_path_to_check):
+                    log.info(f"The folder '{filename}' exists at the specified path.")
+                else:
+                    log.info(f"The folder '{filename}' does not exist at the specified path.")
+                    download_folder(client, path, local_target_directory)
+                scp_upload_input_folder(local_target_directory + "/last_dir", machine_found.dataDir,
+                                        request.session['content'], machineID)
+            else:
+                log.info("Type: Folder")
+                full_path_to_check = os.path.join(local_target_directory, filename)
+                # Check if the folder exists at the specified path
+                if os.path.exists(full_path_to_check) and os.path.isdir(full_path_to_check):
+                    log.info(f"The folder '{filename}' exists at the specified path.")
+                else:
+                    log.info(f"The folder '{filename}' does not exist at the specified path.")
+                    download_folder(client, path + "/filename", local_target_directory)
+                scp_upload_input_folder(local_target_directory + "/filename", machine_found.dataDir,
+                                        request.session['content'], machineID)
+    client.quit()
+    return
 
 
 class run_sim_async(threading.Thread):
@@ -235,16 +415,18 @@ class run_sim_async(threading.Thread):
 
         execution_folder = wdirPath + "/execution"
         workflow_folder = wdirPath + "/workflows"
-        Execution.objects.filter(eID=self.eiD).update(wdir=execution_folder, workflow_path= workflow_folder, name_workflow=workflow_name)
+        Execution.objects.filter(eID=self.eiD).update(wdir=execution_folder, workflow_path=workflow_folder,
+                                                      name_workflow=workflow_name)
         self.request.session['workflow_path'] = workflow_folder
 
         path_install_dir = machine_found.installDir
         param_machine = remove_numbers(machine_found.fqdn)
 
         local_folder = "/home/ubuntu/installDir"
-
+        log.info("CODE")
         scp_upload_folder(local_folder, path_install_dir, self.request.session["content"], machine_found.id)
-
+        log.info("INPUT")
+        download_input(workflow, self.request, machine_found.id)
         if self.checkpoint_bool:
             cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; mkdir -p " + execution_folder + "; cd " + machine_found.installDir + "/scripts/" + machine_folder + "/;  source app-checkpoint.sh " + userMachine + " " + str(
                 self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir
@@ -335,7 +517,6 @@ def start_exec(numNodes, name_sim, execTime, qos, name, request, auto_restart_bo
     machine_found = Machine.objects.get(id=request.session['machine_chosen'])
     userMachine = machine_found.user
     principal_folder = machine_found.wdir
-    log.info("SUBMIT")
     uID = uuid.uuid4()
     form = Execution()
     form.eID = uID
@@ -355,9 +536,6 @@ def start_exec(numNodes, name_sim, execTime, qos, name, request, auto_restart_bo
     form.autorestart = auto_restart_bool
     form.machine = machine_found
     form.save()
-    log.info("EXECUTION")
-    log.info(form.wdir)
-    log.info(uID)
     return uID
 
 
@@ -399,11 +577,9 @@ def delete_parent_folder(path, ssh):
 
 def deleteExecution(eIDdelete, request):
     ssh = connection(request.session['content'], request.session['machine_chosen'])
-    log.info("DELETE")
     log.info(eIDdelete)
     exec = Execution.objects.filter(eID=eIDdelete).get()
     log.info(exec.eID)
-    log.info("DELETE PARENT FOLDER")
     log.info(exec.jobID)
     log.info(exec.wdir)
     delete_parent_folder(exec.wdir, ssh)
@@ -611,7 +787,7 @@ def update_table(request):
     machineID = machine_found.id
     ssh = connection(request.session["content"], machineID)
     executions = Execution.objects.all().filter(author=request.user, machine=request.session['machine_chosen']).filter(
-        Q(status="PENDING") | Q(status="RUNNING"))
+        Q(status="PENDING") | Q(status="RUNNING") | Q(status="INITIALIZING"))
     log.info(executions)
     for executionE in executions:
         log.info(executionE.jobID)
@@ -1141,207 +1317,27 @@ def is_folder(ftp, name):
         return False
 
 
-"""def run_sim_backup(request):
-    if request.method == 'POST':
-        checkConnBool = checkConnection(request)
-        if not checkConnBool:
-            machines_done = populate_executions_machines(request)
-            if not machines_done:
-                request.session['firstCheck'] = "no"
-            request.session["checkConn"] = "Required"
-            return render(request, 'accounts/executions.html',
-                          {'machines': machines_done, 'checkConn': "no"})
-        form = DocumentForm(request.POST, request.FILES)
-        if form.is_valid():
-            name = None
-            machine = request.session['machine_chosen']
-            user = machine.split("@")[0]
-            fqdn = machine.split("@")[1]
-            machine_folder = extract_substring(fqdn)
-            machine_found = Machine.objects.get(author=request.user, user=user, fqdn=fqdn)
-            machineID = machine_found.id
-            request.session['machineID'] = machineID
-            request.userMachine = user
-            request.fqdn = fqdn
-            for filename, file in request.FILES.items():
-                uniqueID = uuid.uuid4()
-                name = file
-                nameE = (str(name).split(".")[0]) + "_" + str(uniqueID) + "." + str(name).split(".")[1]
-                name = nameE
-            document = form.save(commit=False)
-            document.document.name = name
-            document.save()
-            workflow = read_and_write(name)
-            user = request.user
-            userMachine = machine_found.user
-            ssh = connection(request.session["content"], request.session["machineID"])
-            request.session["connection_machine"] = machineID
-            workflow_name = workflow.get("workflow_type")
-            principal_folder = machine_found.wdir
-            uniqueIDfolder = uuid.uuid4()
-            s = "execution_" + str(uniqueIDfolder)
-            if not principal_folder.endswith("/"):
-                principal_folder = principal_folder + "/"
-            wdirDone = principal_folder + "" + s
-            cmd1 = "source /etc/profile; mkdir -p " + principal_folder + "/" + s + "/workflows/; echo " + str(
-                workflow) + " > " + principal_folder + "/" + s + "/workflows/" + str(
-                name) + "; cd " + principal_folder + "; BACKUPDIR=$(ls -td ./*/ | head -1); echo EXECUTION_FOLDER:$BACKUPDIR;"
-            stdin, stdout, stderr = ssh.exec_command(cmd1)
-            stdout = stdout.readlines()
-            execution_folder = wdirDone + "/execution"
-            workflow_folder = wdirDone + "/workflows"
-            numNodes = request.POST.get('numNodes')
-            name_sim = request.POST.get('name_sim')
-            if name_sim is None:
-                name_sim = get_random_string(8)
-            execTime = request.POST.get('execTime')
-            checkpoint_flag = request.POST.get("checkpoint_flag")
-            checkpoint_bool = False
-            if checkpoint_flag == "on":
-                checkpoint_bool = True
+def custom_404_view(request, exception):
+    context = {'error': 'Page not found'}
+    return render(request, 'accounts/404.html', {}, status=404)
 
-            auto_restart = request.POST.get("auto_restart")
-            auto_restart_bool = False
-            if auto_restart == "on":
-                auto_restart_bool = True
 
-            if auto_restart_bool:
-                checkpoint_bool = True
-            request.session['workflow_path'] = workflow_folder
-            qos = request.POST.get('qos')
-            path_install_dir = machine_found.installDir
-            param_machine = remove_numbers(machine_found.fqdn)
+def custom_500_view(request):
+    context = {'error': 'Internal server error'}
+    return render(request, 'accounts/500.html', {}, status=500)
 
-            local_folder = "/home/ubuntu/installDir"
 
-            scp_upload_folder(local_folder, path_install_dir, request.session["content"], machineID)
-            # delete_github_code()
+def custom_403_view(request, exception):
+    context = {'error': 'Access forbidden'}
+    return render(request, 'accounts/403.html', {}, status=403)
 
-            if checkpoint_bool:
-                cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; mkdir -p " + execution_folder + "; cd " + machine_found.installDir + "/scripts/" + machine_folder + "/;  source app-checkpoint.sh " + userMachine + " " + str(
-                    name) + " " + workflow_folder + " " + execution_folder + " " + numNodes + " " + execTime + " " + qos + " " + machine_found.installDir
-            else:
-                cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; mkdir -p " + execution_folder + "; cd " + machine_found.installDir + "/scripts/" + machine_folder + "/; source app.sh " + userMachine + " " + str(
-                    name) + " " + workflow_folder + " " + execution_folder + " " + numNodes + " " + execTime + " " + qos + " " + machine_found.installDir
-            stdin, stdout, stderr = ssh.exec_command(cmd2)
-            stdout = stdout.readlines()
-            stderr = stderr.readlines()
-            s = "Submitted batch job"
-            var = ""
-            while (len(stdout) == 0):
-                time.sleep(1)
-            if (len(stdout) > 1):
-                for line in stdout:
-                    if (s in line):
-                        jobID = int(line.replace(s, ""))
-                        var = jobID
-                        request.session['jobID'] = jobID
-                        form = Execution()
-                        form.jobID = request.session['jobID']
-                        form.user = userMachine
-                        form.author = request.user
-                        form.nodes = numNodes
-                        form.status = "PENDING"
-                        form.checkpoint = 0
-                        form.time = "00:00:00"
-                        form.wdir = execution_folder
-                        form.workflow_path = workflow_folder
-                        form.execution_time = int(execTime)
-                        form.name_workflow = str(name)
-                        form.qos = qos
-                        form.name_sim = name_sim
-                        form.autorestart = auto_restart_bool
-                        form.machine = machine_found
-                        form.save()
-            request.session['execution_folder'] = execution_folder
-            os.remove("documents/" + str(name))
-            if auto_restart_bool:
-                monitor_checkpoint(var, request, execTime)
-            return redirect('accounts:executions')
 
-    else:
-        form = DocumentForm()
-        request.session['flag'] = 'first'
+def custom_400_view(request, exception):
+    context = {'error': 'Bad request'}
+    return render(request, 'accounts/400.html', {}, status=400)
 
-        checkConnBool = checkConnection(request)
-        if not checkConnBool:
-            machines_done = populate_executions_machines(request)
-            if not machines_done:
-                request.session['firstCheck'] = "no"
-            request.session["checkConn"] = "Required"
-            return render(request, 'accounts/executions.html',
-                          {'machines': machines_done, 'checkConn': "no"})
-    return render(request, 'accounts/run_simulation.html',
-                  {'form': form, 'flag': request.session['flag'], 'machines': populate_executions_machines(request),
-                   'machine_chosen': request.session['machine_chosen']})"""
 
-"""    def run(self):
-        machine_found=Machine.objects.get(id=self.request.session['machine_chosen'])
-        fqdn= machine_found.fqdn
-        machine_folder = extract_substring(fqdn)
-        workflow = read_and_write(self.name)
-        userMachine = machine_found.user
-        workflow_name = workflow.get("workflow_type")
-        principal_folder = machine_found.wdir
-        wdirPath, nameWdir = wdir_folder(principal_folder)
-        cmd1 = "source /etc/profile; mkdir -p " + principal_folder + "/" + nameWdir + "/workflows/; echo " + str(
-            workflow) + " > " + principal_folder + "/" + nameWdir + "/workflows/" + str(
-            workflow_name) + "; cd " + principal_folder + "; BACKUPDIR=$(ls -td ./*/ | head -1); echo EXECUTION_FOLDER:$BACKUPDIR;"
-        log.info("4")
-        ssh = connection(self.request.session["content"], machine_found.id)
-        log.info(cmd1)
-        stdin, stdout, stderr = ssh.exec_command(cmd1)
-        execution_folder = wdirPath + "/execution"
-        workflow_folder = wdirPath + "/workflows"
-
-        self.request.session['workflow_path'] = workflow_folder
-
-        path_install_dir = machine_found.installDir
-        param_machine = remove_numbers(machine_found.fqdn)
-
-        local_folder = "/home/ubuntu/installDir"
-
-        scp_upload_folder(local_folder, path_install_dir, self.request.session["content"], machine_found.id)
-
-        if self.checkpoint_bool:
-            cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; mkdir -p " + execution_folder + "; cd " + machine_found.installDir + "/scripts/" + machine_folder + "/;  source app-checkpoint.sh " + userMachine + " " + str(
-                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir
-        else:
-            cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; mkdir -p " + execution_folder + "; cd " + machine_found.installDir + "/scripts/" + machine_folder + "/; source app.sh " + userMachine + " " + str(
-                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir
-        log.info(cmd2)
-        stdin, stdout, stderr = ssh.exec_command(cmd2)
-        stdout = stdout.readlines()
-        s = "Submitted batch job"
-        var = ""
-        while (len(stdout) == 0):
-            time.sleep(1)
-        if (len(stdout) > 1):
-            for line in stdout:
-                if (s in line):
-                    jobID = int(line.replace(s, ""))
-                    var = jobID
-                    self.request.session['jobID'] = jobID
-                    form = Execution()
-                    form.jobID = self.request.session['jobID']
-                    form.user = userMachine
-                    form.author = self.request.user
-                    form.nodes = self.numNodes
-                    form.status = "PENDING"
-                    form.checkpoint = 0
-                    form.time = "00:00:00"
-                    form.wdir = execution_folder
-                    form.workflow_path = workflow_folder
-                    form.execution_time = int(self.execTime)
-                    form.name_workflow = str(self.name)
-                    form.qos = self.qos
-                    form.name_sim = self.name_sim
-                    form.autorestart = self.auto_restart_bool
-                    form.machine = machine_found
-                    form.save()
-        self.request.session['execution_folder'] = execution_folder
-        os.remove("documents/" + str(self.name))
-        if self.auto_restart_bool:
-            monitor_checkpoint(var, self.request, self.execTime, machine_found.id)
-        return
-"""
+def csrf_failure(request, reason=""):
+    context = {'error': ''}
+    messages.success(request, f'CSRF verification failed. Request aborted')
+    return redirect('accounts:dashboard')

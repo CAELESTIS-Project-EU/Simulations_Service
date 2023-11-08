@@ -1,7 +1,15 @@
 from django.urls import path
-from . import views
 
-app_name='accounts'
+from accounts import api_view, views
+
+app_name = 'accounts'
+
+api_urls = [
+    path('api/run_simulation/', api_view.run_simulation, name='run_simulation'),
+    path('api/delete_execution/<uuid:eID>/', api_view.delete_execution_api, name='delete_execution_api'),
+    path('api/get_status_execution/<uuid:eID>/', api_view.get_status_execution, name='get_status_execution'),
+    path('api/execution/<uuid:eID>/', api_view.execution, name='execution'),
+]
 
 urlpatterns = [
     path('loginpage/', views.loginPage, name="loginpage"),
@@ -19,6 +27,10 @@ urlpatterns = [
     path('meshes/', views.meshes, name="meshes"),
     path('mesh_definition/', views.mesh_definition, name="mesh_definition"),
     path('redefine_mesh/', views.redefine_mesh, name="redefine_mesh"),
+    path('api_token/', views.api_token, name="api_token"),
     path('dashboard/', views.dashboard, name="dashboard"),
     path('', views.home, name='home'),
 ]
+urlpatterns += api_urls
+
+

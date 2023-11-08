@@ -130,3 +130,4 @@ class userMesh(models.Model):
                                 null=True, blank=True)
     pathCluster= models.CharField(max_length=512, null=False)
     dateDownload = models.DateTimeField(null=True)
+
