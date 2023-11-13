@@ -5,10 +5,8 @@ from accounts import api_view, views
 app_name = 'accounts'
 
 api_urls = [
-    path('api/run_simulation/', api_view.run_simulation, name='run_simulation'),
-    path('api/delete_execution/<uuid:eID>/', api_view.delete_execution_api, name='delete_execution_api'),
-    path('api/get_status_execution/<uuid:eID>/', api_view.get_status_execution, name='get_status_execution'),
-    path('api/execution/<uuid:eID>/', api_view.execution, name='execution'),
+    path('simulations/', api_view.run_simulation, name='run_simulation'),
+    path('simulations/execution/<uuid:eID>/', api_view.http_execution, name='http_execution'),
 ]
 
 urlpatterns = [

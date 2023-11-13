@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from .forms import DocumentForm
 from rest_framework.exceptions import APIException
-from accounts.views import start_exec, run_sim_async, deleteExecution, get_status, stop_execution_api, restart_execution_api  # Assuming these are defined elsewhere
+from accounts.views import start_exec, run_sim_async, deleteExecutionHTTP, get_status, stop_execution_api, restart_execution_api  # Assuming these are defined elsewhere
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +32,7 @@ class AuthenticationFailed(APIException):
     status_code = 401
     default_detail = 'Authentication credentials were not provided.'
     default_code = 'authentication_failed'
+
 
 
 @api_view(['POST'])
@@ -107,49 +108,60 @@ def connect_execution(request):
     return True
 
 
-@api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
+@api_view(['GET', 'PUT', 'DELETE'])
+def http_execution(request, eID):
+    log.info("ENTERED HERE")
+    if request.method == 'GET':
+        log.info("ENTERED HERE")
+        return get_status_execution(request, eID)
+
+    elif request.method == 'PUT':
+        log.info("ENTERED HERE PUT")
+        return execution(request, eID)
+
+    elif request.method == 'DELETE':
+        log.info("ENTERED HERE DELETE")
+        return delete_execution_api(request, eID)
+
 def delete_execution_api(request, eID):
-    log.info("ENTERED HERE DELETE")
     try:
         connect_execution(request)
     except APIException as e:
         # If connection fails, return the error response
         return Response({"error": str(e.detail)}, status=e.status_code)
-
-    deleteExecution(eID, request)
-
+    try:
+        deleteExecutionHTTP(eID, request)
+        return Response({'message': 'Execution deleted successfully'}, status=status.HTTP_202_ACCEPTED)
+    except  ValueError as e:
+        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
     # Properly close the SSH connection if you opened it earlier
-    return Response({'message': 'Execution deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
+
 def get_status_execution(request, eID):
-    log.info("ENTERED HERE GET STATUS")
     try:
         connect_execution(request)
     except APIException as e:
         # If connection fails, return the error response
         return Response({"error": str(e.detail)}, status=e.status_code)
+    try:
+        res = get_status(eID, request)
+        eidM = "eID: " + str(res.eID) + ","
+        name = "name: " + str(res.name_sim) + ","
+        jobID = "jobID: " + str(res.jobID) + ","
+        user = "user: " + str(res.user) + ","
+        nodes = "nodes: " + str(res.nodes) + ","
+        statusE = "status: " + str(res.status) + ","
+        autorestart = "autorestart: " + str(res.autorestart) + ","
+        time = "time: " + str(res.time) + ";"
+        jobStatus = eidM + name + jobID + user + nodes + statusE + autorestart + time
+        return Response({'message': jobStatus}, status=status.HTTP_202_ACCEPTED)
+    except  ValueError as e:
+        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-    res= get_status(eID, request)
-
-    eidM="eID: "+str(res.eID) +","
-    name= "name: "+str(res.name_sim) +","
-    jobID = "jobID: " + str(res.jobID) + ","
-    user = "user: " + str(res.user) +","
-    nodes = "nodes: " + str(res.nodes) +","
-    statusE = "status: " + str(res.status) +","
-    autorestart = "autorestart: " + str(res.autorestart) +","
-    time = "time: " + str(res.time) +";"
-    jobStatus=eidM+name+jobID+user+nodes+statusE+autorestart+time
-    return Response({'message': jobStatus}, status=status.HTTP_202_ACCEPTED)
 
 
-@api_view(['PUT'])
-@permission_classes([IsAuthenticated])
 def execution(request, eID):
-    log.info("ENTER HERE EXECUTION")
     try:
         connect_execution(request)
     except APIException as e:
@@ -165,13 +177,13 @@ def execution(request, eID):
     elif statusExecution == "stop":
         try:
             stop_execution_api(eID, request)
-            return Response({'message': 'The execution '+eID+' has been stopped!'}, status=status.HTTP_202_ACCEPTED)
+            return Response({'message': 'The execution '+str(eID)+' has been stopped!'}, status=status.HTTP_202_ACCEPTED)
         except  ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
     elif statusExecution == "restart":
         try:
             restart_execution_api(eID, request)
-            return Response({'message': 'The execution ' + eID + ' has been restarted!'}, status=status.HTTP_202_ACCEPTED)
+            return Response({'message': 'The execution ' + +str(eID) + ' has been restarted!'}, status=status.HTTP_202_ACCEPTED)
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 

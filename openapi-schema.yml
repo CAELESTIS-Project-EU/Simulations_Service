@@ -1,0 +1,88 @@
+openapi: 3.0.2
+info:
+  title: ''
+  version: ''
+paths:
+  /api/get_status_execution/{eID}/:
+    get:
+      operationId: get_status_execution
+      description: 'Get the status of a specific execution given by the eID specified into the parameters'
+      parameters:
+      - name: eID
+        in: path
+        required: true
+        description: 'eID is the '
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: 'Get the status back of the execution'
+          example: '{"message":"eID: f274dcfc-c20c-4784-8d63-eb73693fb365,name: test,jobID: 0,user: bsc19518,nodes: 4,status: INITIALIZING,autorestart: False,time: 00:00:00;"}'
+      tags:
+      - api
+  /api/run_simulation/:
+    post:
+      operationId: run_simulation
+      description: 'Run a new simulation'
+      parameters: []
+      requestBody:
+        content:
+          multipart/form-data:
+            schema: {}
+          application/x-www-form-urlencoded:
+            schema: {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: {}
+          description: 'Confirm that the simulation started successfully and gives back the unique ID of the new simulation.'
+          example: '{"message":"Simulation started successfully! ","execution_id":"xxxxxxx-xxxx-xxxxx-xxxx-xxxxxxx"}'
+      tags:
+      - api
+  /api/execution/{eID}/:
+    put:
+      operationId: updateexecution
+      description: ''
+      parameters:
+      - name: eID
+        in: path
+        required: true
+        description: ''
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+          application/x-www-form-urlencoded:
+            schema: {}
+          multipart/form-data:
+            schema: {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: ''
+      tags:
+      - api
+  /api/delete_execution/{eID}/:
+    delete:
+      operationId: destroydelete_execution_api
+      description: ''
+      parameters:
+      - name: eID
+        in: path
+        required: true
+        description: ''
+        schema:
+          type: string
+      responses:
+        '204':
+          description: ''
+      tags:
+      - api

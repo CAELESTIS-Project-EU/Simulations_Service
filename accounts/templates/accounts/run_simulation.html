@@ -7,9 +7,17 @@
                 <h2 class="text-center mb-5" style="text-decoration: underline;">
                            <button type="button" class="btn btn-primary btn-xl" disabled>{{ machine_chosen }}</button>
                 </h2>
+                                {% csrf_token %}
                 <div class="wrapper-create-work">
                     <form method="post" enctype="multipart/form-data">
                         {% csrf_token %}
+                        <select id="branchChoice" name="branchChoice" class="btn btn-secondary dropdown-toggle">
+                            {% if branches %}
+                                {% for branch in branches %}
+                                    <option>{{ branch }}</option>
+                                {% endfor %}
+                            {% endif %}
+                        </select>
                         <br>
                         <input hidden type="text" name="user" value="{{ user.username }}"/>
                         <div class="form-group" style="align-content: center">

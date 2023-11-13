@@ -19,6 +19,7 @@ import string
 import re
 import os
 import subprocess
+import requests
 import configuration as cfg
 from ftplib import FTP_TLS
 from rest_framework.authtoken.models import Token
@@ -99,8 +100,8 @@ def extract_substring(s):
     return None
 
 
-def scp_upload_folder(local_path, remote_path, content, machineID):
-    res = get_github_code()
+def scp_upload_folder(local_path, remote_path, content, machineID,branch):
+    res = get_github_code(branch)
     ssh = paramiko.SSHClient()
     pkey = paramiko.RSAKey.from_private_key(StringIO(content))
     machine_found = Machine.objects.get(id=machineID)
@@ -194,11 +195,11 @@ def api_token(request):
     return render(request, 'accounts/token-api.html')
 
 
-def get_github_code():
+def get_github_code(branch_name):
     script_path = '/var/www/API_REST/gitClone.sh'
+
     try:
-        # subprocess.run(['bash', script_path], check=True)
-        result = subprocess.run([script_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        result = subprocess.run([script_path, branch_name], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         # Check the output
         if "Repository not found. Cloning repository..." in result.stdout:
             return True
@@ -207,12 +208,33 @@ def get_github_code():
         else:
             if result.stderr:
                 log.info("Error:", result.stderr)
-
     except subprocess.CalledProcessError as e:
         log.info(f"Script execution failed with error code {e.returncode}: {e.stderr.decode('utf-8')}")
     except FileNotFoundError:
         log.info(f"Error: The script '{script_path}' was not found.")
     return False
+
+
+def get_github_repo_branches():
+    log.info("CI SIAMO")
+    repo_url = "https://github.com/CAELESTIS-Project-EU/Workflows"
+    """
+    Given a GitHub repository URL, this function returns a list of available branches in that repository.
+    """
+    # Extract the user/repo from the URL
+    user_repo = repo_url.split("github.com/")[1]
+    # GitHub API endpoint to get branches
+    api_url = f"https://api.github.com/repos/{user_repo}/branches"
+
+    # Make the API request
+    response = requests.get(api_url)
+
+    # Check if the response is successful
+    if response.status_code == 200:
+        branches = response.json()
+        return [branch['name'] for branch in branches]
+    else:
+        return f"Error: Unable to access the GitHub repository. Status code: {response.status_code}"
 
 
 def delete_github_code():
@@ -251,8 +273,12 @@ def get_status(eID, request):
             values = str(stdout).split()
             Execution.objects.filter(jobID=executionE.jobID).update(status=values[4], time=values[3],
                                                                     nodes=int(values[2]))
-    execution = Execution.objects.get(eID=eID)
+    try:
+        execution = Execution.objects.get(eID=eID)
+    except:
+        raise ValueError("The execution doesn't exist", 0)
     return execution
+
 
 def stop_execution_api(eID, request):
     ssh = connection(request.session['content'], request.session['machine_chosen'])
@@ -266,13 +292,15 @@ def stop_execution_api(eID, request):
         raise ValueError("The execution doesn't exist", 0)
     return True
 
+
 def restart_execution_api(eID, request):
     exec = Execution.objects.filter(eID=eID).get()
-    if exec.jobID!=0:
+    if exec.jobID != 0:
         checkpointing_noAutorestart(exec.jobID, request)
     else:
         raise ValueError("The execution is in the initialing phase", 0)
     return
+
 
 def get_name_fqdn(machine):
     user = machine.split("@")[0]
@@ -295,9 +323,12 @@ def ensure_local_directory_exists(path):
 
 
 def download_folder(ftp_conn, ftp_folder_path, local_folder_path):
+    log.info("ENTERING DOWNLOAD MODE")
     ensure_local_directory_exists(local_folder_path)
+    log.info("ENTERING DOWNLOAD MODE 2")
     # List items in the FTP directory
     items = ftp_conn.nlst(ftp_folder_path)
+    log.info(items)
     for item in items:
         local_item_path = os.path.join(local_folder_path, os.path.basename(item))
         ftp_item_path = item
@@ -305,6 +336,7 @@ def download_folder(ftp_conn, ftp_folder_path, local_folder_path):
         # Check if the item is a file or a folder
         if '.' in os.path.basename(item):  # Assuming files have extensions
             with open(local_item_path, 'wb') as file:
+                log.info(f'RETR {ftp_item_path}', file.write)
                 ftp_conn.retrbinary(f'RETR {ftp_item_path}', file.write)
         else:
             download_folder(ftp_conn, ftp_item_path, local_item_path)
@@ -377,7 +409,32 @@ def download_input(workflow, request, machineID):
                     log.info(f"The folder '{filename}' exists at the specified path.")
                 else:
                     log.info(f"The folder '{filename}' does not exist at the specified path.")
-                    download_folder(client, path + "/filename", local_target_directory)
+                    log.info("Try to download")
+                    # download_folder(client, path + "/filename", local_target_directory)
+                    ftp_conn = client
+                    ftp_folder_path = path + "/" + filename + "/"
+                    log.info("PATH FOLDER")
+                    log.info(ftp_folder_path)
+                    local_folder_path = local_target_directory
+                    log.info("ENTERING DOWNLOAD MODE")
+                    ensure_local_directory_exists(local_folder_path)
+                    log.info("ENTERING DOWNLOAD MODE 2")
+                    # List items in the FTP directory
+
+                    items = ftp_conn.nlst(ftp_folder_path)
+                    log.info(items)
+                    for item in items:
+                        local_item_path = os.path.join(local_folder_path, os.path.basename(item))
+                        ftp_item_path = item
+
+                        # Check if the item is a file or a folder
+                        if '.' in os.path.basename(item):  # Assuming files have extensions
+                            with open(local_item_path, 'wb') as file:
+                                log.info(f'RETR {ftp_item_path}', file.write)
+                                ftp_conn.retrbinary(f'RETR {ftp_item_path}', file.write)
+                        else:
+                            download_folder(ftp_conn, ftp_item_path, local_item_path)
+
                 scp_upload_input_folder(local_target_directory + "/filename", machine_found.dataDir,
                                         request.session['content'], machineID)
     client.quit()
@@ -385,7 +442,7 @@ def download_input(workflow, request, machineID):
 
 
 class run_sim_async(threading.Thread):
-    def __init__(self, request, name, numNodes, name_sim, execTime, qos, checkpoint_bool, auto_restart_bool, eID):
+    def __init__(self, request, name, numNodes, name_sim, execTime, qos, checkpoint_bool, auto_restart_bool, eID, branch):
         threading.Thread.__init__(self)
         self.request = request
         self.name = name
@@ -396,6 +453,7 @@ class run_sim_async(threading.Thread):
         self.checkpoint_bool = checkpoint_bool
         self.auto_restart_bool = auto_restart_bool
         self.eiD = eID
+        self.branch= branch
 
     def run(self):
         log.info("STARTING")
@@ -424,15 +482,15 @@ class run_sim_async(threading.Thread):
 
         local_folder = "/home/ubuntu/installDir"
         log.info("CODE")
-        scp_upload_folder(local_folder, path_install_dir, self.request.session["content"], machine_found.id)
+        scp_upload_folder(local_folder, path_install_dir, self.request.session["content"], machine_found.id, self.branch)
         log.info("INPUT")
         download_input(workflow, self.request, machine_found.id)
         if self.checkpoint_bool:
             cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; mkdir -p " + execution_folder + "; cd " + machine_found.installDir + "/scripts/" + machine_folder + "/;  source app-checkpoint.sh " + userMachine + " " + str(
-                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir
+                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir + "" + self.branch
         else:
             cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; mkdir -p " + execution_folder + "; cd " + machine_found.installDir + "/scripts/" + machine_folder + "/; source app.sh " + userMachine + " " + str(
-                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir
+                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir + "" + self.branch
         stdin, stdout, stderr = ssh.exec_command(cmd2)
         stdout = stdout.readlines()
         s = "Submitted batch job"
@@ -465,6 +523,7 @@ def run_sim(request):
                           {'machines': machines_done, 'checkConn': "no"})
         form = DocumentForm(request.POST, request.FILES)
         if form.is_valid():
+            branch= request.POST.get('branchChoice')
             name = None
             for filename, file in request.FILES.items():
                 uniqueID = uuid.uuid4()
@@ -492,14 +551,14 @@ def run_sim(request):
                 checkpoint_bool = True
             eID = start_exec(numNodes, name_sim, execTime, qos, name, request, auto_restart_bool)
             run_sim = run_sim_async(request, name, numNodes, name_sim, execTime, qos, checkpoint_bool,
-                                    auto_restart_bool, eID)
+                                    auto_restart_bool, eID, branch)
             run_sim.start()
             return redirect('accounts:executions')
 
     else:
         form = DocumentForm()
         request.session['flag'] = 'first'
-
+        branches= get_github_repo_branches()
         checkConnBool = checkConnection(request)
         if not checkConnBool:
             machines_done = populate_executions_machines(request)
@@ -510,7 +569,7 @@ def run_sim(request):
                           {'machines': machines_done, 'checkConn': "no"})
     return render(request, 'accounts/run_simulation.html',
                   {'form': form, 'flag': request.session['flag'], 'machines': populate_executions_machines(request),
-                   'machine_chosen': request.session['nameConnectedMachine']})
+                   'machine_chosen': request.session['nameConnectedMachine'], 'branches': branches})
 
 
 def start_exec(numNodes, name_sim, execTime, qos, name, request, auto_restart_bool):
@@ -596,6 +655,20 @@ def deleteExecution(eIDdelete, request):
     return render(request, 'accounts/executions.html',
                   {'form': form, 'executions': executions, 'executionsDone': executionsDone,
                    'executionsFailed': executionsFailed, 'executionsTimeout': executionTimeout})
+
+
+def deleteExecutionHTTP(eIDdelete, request):
+    ssh = connection(request.session['content'], request.session['machine_chosen'])
+    try:
+        exec = Execution.objects.filter(eID=eIDdelete).get()
+        delete_parent_folder(exec.wdir, ssh)
+        if exec.eID != 0:
+            command = "scancel " + str(exec.jobID)
+            stdin, stdout, stderr = ssh.exec_command(command)
+        Execution.objects.filter(eID=eIDdelete).delete()
+        return
+    except:
+        raise ValueError("The execution doesn't exist", 0)
 
 
 def executions(request):
@@ -1249,22 +1322,6 @@ def remove_numbers(input_str):
     else:
         # If there are not enough parts, return the original string
         return input_str
-
-
-def ftp_download():
-    client = FTP_TLS()
-    client.connect(host=cfg.host, port=cfg.port)
-    client.login(user=cfg.user, passwd=cfg.passw)
-    client.dir()
-    client.cwd(cfg.folder)
-    client.prot_p()
-
-    remote_folder_path = '/home/bsc19/bsc19518/installWorkflow/meshs'
-    local_target_directory = 'local_folder'
-
-    download_folder(client, remote_folder_path, local_target_directory)
-
-    client.quit()
 
 
 def upload_folder(ftp, folder_path):
