@@ -24,6 +24,36 @@ source_suffix = '.rst'
 # The master toctree document.
 master_doc = 'index'
 
+pygments_style = 'sphinx'
+
+# A list of ignored prefixes for module index sorting.
+# modindex_common_prefix = []
+
+# If true, keep warnings as "system message" paragraphs in the built documents.
+# keep_warnings = False
+
+# If true, `todo` and `todoList` produce output, else they produce nothing.
+todo_include_todos = False
+
+# -- Options for HTML output ----------------------------------------------
+
+# The theme to use for HTML and HTML Help pages.  See the documentation for
+# a list of builtin themes.
+html_theme = 'scipy'
+
+# Theme options are theme-specific and customize the look and feel of a theme
+# further.  For a list of options available for each theme, see the
+# documentation.
+html_theme_options = {
+    "edit_link": False,
+    "sidebar": "right",
+    "scipy_org_logo": False,
+    "rootlinks": []
+}
+
+# Add any paths that contain custom themes here, relative to this directory.
+html_theme_path = [os.path.join(os.pardir, 'scipy-sphinx-theme', '_theme')]
+
 
 
 
