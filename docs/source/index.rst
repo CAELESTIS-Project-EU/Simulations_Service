@@ -48,7 +48,7 @@ Documentation
 
 * :doc:`User guide <user-guide>`
 * :doc:`API Reference <api-reference>`
-* :doc:`Development <development>`
+* :doc:`YAML file <yaml-file>`
 * :doc:`Requirements <requirements>`
 
 Source code
