@@ -34,7 +34,7 @@ Use of High-Performance Computing (HPC): HPC is integral to CAELESTIS for handli
 
 In summary, the CAELESTIS project represents a significant effort in using advanced simulation technologies, digital twins, and high-performance computing to create more efficient, environmentally friendly aircraft designs, thereby contributing to the European Green Deal and the broader goal of sustainable aviation.
 
-Dislib has been implemented on top of `PyCOMPSs <https://www.bsc
+This service has been implemented on top of `PyCOMPSs <https://www.bsc
 .es/research-and-development/software-and-apps/software-list/comp-superscalar
 />`_ programming model, and it is being developed by the `Workflows
 and Distributed Computing <https://www.bsc
