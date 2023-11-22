@@ -60,6 +60,7 @@ def run_simulation(request):
 
         # Extract data from request.data instead of request.POST
         numNodes = request.data.get('numNodes')
+        branch = request.data.get('branch')
         name_sim = request.data.get('name_sim') or get_random_string(8)
         qos = request.data.get('qos')
         execTime = request.data.get('execTime')
@@ -75,7 +76,7 @@ def run_simulation(request):
         log.info("eID")
         log.info(eID)
         run_simulation = run_sim_async(request, name, numNodes, name_sim, execTime, qos, checkpoint_bool,
-                                       auto_restart_bool, eID)
+                                       auto_restart_bool, eID, branch)
         run_simulation.start()
         return Response({'message': 'Simulation started successfully! ', 'execution_id': eID},
                         status=status.HTTP_202_ACCEPTED)
@@ -111,17 +112,13 @@ def connect_execution(request):
 @permission_classes([IsAuthenticated])
 @api_view(['GET', 'PUT', 'DELETE'])
 def http_execution(request, eID):
-    log.info("ENTERED HERE")
     if request.method == 'GET':
-        log.info("ENTERED HERE")
         return get_status_execution(request, eID)
 
     elif request.method == 'PUT':
-        log.info("ENTERED HERE PUT")
         return execution(request, eID)
 
     elif request.method == 'DELETE':
-        log.info("ENTERED HERE DELETE")
         return delete_execution_api(request, eID)
 
 def delete_execution_api(request, eID):

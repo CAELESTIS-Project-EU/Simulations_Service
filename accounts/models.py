@@ -69,6 +69,7 @@ class Execution(models.Model):
                                 on_delete=models.CASCADE,
                                 to_field='id',
                                 null=True, blank=True)
+    results_ftp_path = models.CharField(max_length=255, null=False)
 
 
 class Key_Gen(models.Model):

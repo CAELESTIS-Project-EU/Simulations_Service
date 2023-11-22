@@ -17,9 +17,17 @@
                                   document.execCommand("copy");
                                   $temp.remove();
                                 }
+                            function toggleVisibility(elementId) {
+                                var element = document.getElementById(elementId);
+                                if (element.style.display === "none") {
+                                    element.style.display = "block";
+                                } else {
+                                    element.style.display = "none";
+                                }
+                            }
                         </script>
 
-                        <p class="h4" style="text-align: center">Pending executions:</p>
+                        <p class="h4" style="text-align: center">Execution:</p>
                         <table class="table">
                           <thead>
                             <tr style="text-align: center">
@@ -41,12 +49,26 @@
 
                           </tbody>
                         </table>
-                        <button class="btn btn-secondary"  onclick="copyToClipboard('#p1')" > Click to copy the path of the COMPSs output report</button>
+                        <!-- <button class="btn btn-secondary"  onclick="copyToClipboard('#p1')" > Click to copy the path of the COMPSs output report</button>
                         <button id="p1" hidden> {{pathOut}}</button>
                         <br> <br>
                         <button class="btn btn-secondary"  onclick="copyToClipboard('#p2')" > Click to copy the path of the COMPSs error report</button>
-                        <button id="p2" hidden> {{pathErr}}</button>
-                </div>
+                        <button id="p2" hidden> {{pathErr}}</button> -->
+
+                        {% if contentErr %}
+                            <button onclick="toggleVisibility('containerContentErr')" class="btn btn-secondary">Show compss.err log file</button>
+                            <div id="containerContentErr"  style="display:none; text-align: left; alignment: left">
+                                <pre>{{ contentErr|safe }}</pre>
+                            </div>
+                        {% endif %}
+
+                        {% if contentOut %}
+                            <button onclick="toggleVisibility('containerContentOut')" class="btn btn-secondary">Show compss.out log file</button>
+                            <div id="containerContentOut" style="display:none; text-align: left; alignment: left">
+                                <pre>{{ contentOut|safe }}</pre>
+                            </div>
+                        {% endif %}
+                 </div>
               </div>
             </div>
   {% else %}

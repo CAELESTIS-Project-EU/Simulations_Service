@@ -23,6 +23,7 @@ import requests
 import configuration as cfg
 from ftplib import FTP_TLS
 from rest_framework.authtoken.models import Token
+from stat import S_ISDIR
 
 log = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ def decrypt(token: bytes, key: bytes) -> bytes:
     try:
         res = Fernet(key).decrypt(token)
     except Exception as e:
-        log.info("Error decrypting token: %s", str(e))
+        log.error("Error decrypting token: %s", str(e))
         raise
     return res
 
@@ -100,81 +101,118 @@ def extract_substring(s):
     return None
 
 
-def scp_upload_folder(local_path, remote_path, content, machineID,branch):
-    res = get_github_code(branch)
+def scp_upload_code_folder(local_path, remote_path, content, machineID, branch):
+    res = get_github_code(branch)  # Assuming this is part of your existing code
+
     ssh = paramiko.SSHClient()
     pkey = paramiko.RSAKey.from_private_key(StringIO(content))
-    machine_found = Machine.objects.get(id=machineID)
+    machine_found = Machine.objects.get(id=machineID)  # Your custom model
+
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     ssh.connect(machine_found.fqdn, username=machine_found.user, pkey=pkey)
     sftp = ssh.open_sftp()
-    checkFolder = False
-    try:
-        sftp.stat(remote_path)
-        print("Folder exists")
-    except IOError:
-        checkFolder = True
-    if res or checkFolder:
-        try:
-            try:
-                sftp.stat(remote_path)
-            except FileNotFoundError:
-                sftp.mkdir(remote_path)
-            # Recursively upload the local  folder and its contents
-            for root, dirs, files in os.walk(local_path):
-                remote_dir = os.path.join(remote_path, os.path.relpath(root, local_path))
 
-                # Create remote directories as needed
+    # Check and create remote folder if it doesn't exist
+    remote_dirs = remote_path.split('/')
+    current_dir = ''
+    for dir in remote_dirs:
+        if dir:
+            current_dir += '/' + dir
+            try:
+                sftp.stat(current_dir)
+            except FileNotFoundError:
+                sftp.mkdir(current_dir)
+
+    if res:
+        # Recursively upload the local folder and its contents
+        for root, dirs, files in os.walk(local_path + "/" + branch):
+            # Calculate the relative path from local_path to root
+            relative_root = os.path.relpath(root, local_path + "/" + branch)
+            # Skip the creation of the root directory itself
+            if relative_root == '.':
+                remote_dir = remote_path
+            else:
+                remote_dir = os.path.join(remote_path, relative_root)
                 try:
                     sftp.stat(remote_dir)
                 except FileNotFoundError:
                     sftp.mkdir(remote_dir)
-                for file in files:
-                    local_file = os.path.join(root, file)
-                    remote_file = os.path.join(remote_dir, file)
-                    sftp.put(local_file, remote_file)
-            sftp.close()
-        except Exception as e:
-            log.info(f"Error: {e}")
+
+            for file in files:
+                local_file = os.path.join(root, file)
+                remote_file = os.path.join(remote_dir, file)
+                sftp.put(local_file, remote_file)
+
+    sftp.close()
+    return
+
+
+def is_file_or_folder(path):
+    if '.' in os.path.basename(path) and not path.endswith('.'):
+        return False
     else:
-        log.info("The code is already up to date! No git clone needed!")
+        return True
 
 
 def scp_upload_input_folder(local_path, remote_path, content, machineID):
     ssh = paramiko.SSHClient()
     pkey = paramiko.RSAKey.from_private_key(StringIO(content))
-    machine_found = Machine.objects.get(id=machineID)
+    machine_found = Machine.objects.get(id=machineID)  # Assuming this is your custom code
+
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     ssh.connect(machine_found.fqdn, username=machine_found.user, pkey=pkey)
     sftp = ssh.open_sftp()
-    checkFolder = False
-    try:
-        sftp.stat(remote_path)
-        log.info("Folder exists")
-    except IOError:
-        checkFolder = True
-    if checkFolder:
-        try:
-            try:
-                sftp.stat(remote_path)
-            except FileNotFoundError:
-                sftp.mkdir(remote_path)
-            # Recursively upload the local  folder and its contents
-            for root, dirs, files in os.walk(local_path):
-                remote_dir = os.path.join(remote_path, os.path.relpath(root, local_path))
+
+    # Split the remote path and create directories if they don't exist
+    remote_dirs = remote_path.split('/')
+    current_dir = ''
+    for dir in remote_dirs:
+        if dir:
+            if is_file_or_folder(dir):
+                current_dir += '/' + dir
                 try:
-                    sftp.stat(remote_dir)
+                    sftp.stat(current_dir)
                 except FileNotFoundError:
-                    sftp.mkdir(remote_dir)
-                for file in files:
-                    local_file = os.path.join(root, file)
-                    remote_file = os.path.join(remote_dir, file)
-                    sftp.put(local_file, remote_file)
-            sftp.close()
-        except Exception as e:
-            log.info(f"Error: {e}")
-    else:
-        log.info("The input files are already up to date!")
+                    sftp.mkdir(current_dir)
+    # Recursively upload the local folder and its contents
+    for root, dirs, files in os.walk(local_path):
+        if files:
+            for file in files:
+                if root == local_path:
+                    file_upload(root, file, remote_path, sftp)
+
+    for root, dirs, files in os.walk(local_path):
+        for dir in dirs:
+            try:
+                sftp.stat(remote_path + "/" + dir)
+            except FileNotFoundError:
+                sftp.mkdir(remote_path + "/" + dir)
+            check_folder(local_path + "/" + dir, remote_path + "/" + dir, sftp)
+    sftp.close()
+
+    return
+
+
+def check_folder(local_path, remote_path, sftp):
+    for root, dirs, files in os.walk(local_path, followlinks=False):
+        if files:
+            for file in files:
+                file_upload(local_path, file, remote_path, sftp)
+        if dirs:
+            for dirFile in dirs:
+                try:
+                    sftp.stat(remote_path + "/" + dirFile)
+                except FileNotFoundError:
+                    sftp.mkdir(remote_path + "/" + dirFile)
+                return check_folder(local_path + "/" + dirFile, remote_path + "/" + dirFile, sftp)
+    return
+
+
+def file_upload(root, file, remote_dir, sftp):
+    local_file = os.path.join(root, file)
+    remote_file = os.path.join(remote_dir, file)
+    sftp.put(local_file, remote_file)
+    return
 
 
 def api_token(request):
@@ -183,7 +221,7 @@ def api_token(request):
             token = Token.objects.get(user=request.user)
             token.delete()
         except Token.DoesNotExist:
-            log.info("Token does not exist.")
+            log.error("Token does not exist.")
 
         # Create a new token
         token, created = Token.objects.get_or_create(user=request.user)
@@ -207,16 +245,15 @@ def get_github_code(branch_name):
             return True
         else:
             if result.stderr:
-                log.info("Error:", result.stderr)
+                log.error("Error:", result.stderr)
     except subprocess.CalledProcessError as e:
-        log.info(f"Script execution failed with error code {e.returncode}: {e.stderr.decode('utf-8')}")
+        log.error(f"Script execution failed with error code {e.returncode}: {e.stderr.decode('utf-8')}")
     except FileNotFoundError:
-        log.info(f"Error: The script '{script_path}' was not found.")
+        log.error(f"Error: The script '{script_path}' was not found.")
     return False
 
 
 def get_github_repo_branches():
-    log.info("CI SIAMO")
     repo_url = "https://github.com/CAELESTIS-Project-EU/Workflows"
     """
     Given a GitHub repository URL, this function returns a list of available branches in that repository.
@@ -242,9 +279,9 @@ def delete_github_code():
     try:
         subprocess.run(['bash', script_path], check=True)
     except subprocess.CalledProcessError as e:
-        log.info(f"Script execution failed with error code {e.returncode}: {e.stderr.decode('utf-8')}")
+        log.error(f"Script execution failed with error code {e.returncode}: {e.stderr.decode('utf-8')}")
     except FileNotFoundError:
-        log.info(f"Error: The script '{script_path}' was not found.")
+        log.error(f"Error: The script '{script_path}' was not found.")
     return
 
 
@@ -265,7 +302,6 @@ def get_status(eID, request):
     executions = Execution.objects.all().filter(author=request.user, machine=request.session['machine_chosen']).filter(
         Q(status="PENDING") | Q(status="RUNNING") | Q(status="INITIALIZING"))
     for executionE in executions:
-        log.info(executionE.jobID)
         if executionE.jobID != 0:
             stdin, stdout, stderr = ssh.exec_command(
                 "sacct -j " + str(executionE.jobID) + " --format=jobId,user,nnodes,elapsed,state | sed -n 3,3p")
@@ -323,20 +359,16 @@ def ensure_local_directory_exists(path):
 
 
 def download_folder(ftp_conn, ftp_folder_path, local_folder_path):
-    log.info("ENTERING DOWNLOAD MODE")
     ensure_local_directory_exists(local_folder_path)
-    log.info("ENTERING DOWNLOAD MODE 2")
     # List items in the FTP directory
     items = ftp_conn.nlst(ftp_folder_path)
-    log.info(items)
     for item in items:
-        local_item_path = os.path.join(local_folder_path, os.path.basename(item))
+        local_item_path = os.path.join(local_folder_path, get_last_directory(item))
         ftp_item_path = item
 
         # Check if the item is a file or a folder
         if '.' in os.path.basename(item):  # Assuming files have extensions
             with open(local_item_path, 'wb') as file:
-                log.info(f'RETR {ftp_item_path}', file.write)
                 ftp_conn.retrbinary(f'RETR {ftp_item_path}', file.write)
         else:
             download_folder(ftp_conn, ftp_item_path, local_item_path)
@@ -357,72 +389,65 @@ def is_file_with_extension(filename):
     return '.' in filename
 
 
+def get_last_directory(file_path):
+    # Strip the trailing slash, if any
+    if file_path.endswith('/'):
+        file_path = os.path.dirname(file_path)
+
+    # Then get the base name
+    return os.path.basename(file_path)
+
+
 def download_input(workflow, request, machineID):
-    log.info("START INPUT")
     client = FTP_TLS()
     try:
-        log.info("HERE")
         client.connect(host=cfg.host, port=cfg.port)
-        log.info("HERE 2")
         client.login(user=cfg.user, passwd=cfg.passw)
-        log.info("HERE 3")
     except ConnectionError as conn_error:
         # Handle connection-related errors
-        log.info(f"Connection Error: {conn_error}")
-
+        log.error(f"Connection Error: {conn_error}")
     except TimeoutError as timeout_error:
         # Handle timeout-related errors
-        log.info(f"Timeout Error: {timeout_error}")
+        log.error(f"Timeout Error: {timeout_error}")
     except Exception as e:
         # Handle other exceptions
-        log.info(f"An error occurred: {e}")
+        log.error(f"An error occurred: {e}")
     local_target_directory = '/home/ubuntu/inputFiles/'
     client.prot_p()  # Switch to secure data connection
+    client.set_debuglevel(2)
     machine_found = Machine.objects.get(id=request.session['machine_chosen'])
-    log.info("HEREEEE")
-    log.info(workflow['input'].items())
-    for key, url in workflow['input'].items():
-        path, filename = extract_path_and_filename(url)
-        log.info("INPUT FILES")
-        log.info(path)
-        log.info(filename)
-        if path and filename:
-            log.info(f"{key}:")
-            log.info("Path:", path)
-            log.info("Filename:", filename)
+    for key, items in workflow['input'].items():
+        server = folder = None
+        # Iterate through each item in the category
+        for item in items:
+            if 'server' in item:
+                server = item['server']
+            elif 'path' in item:
+                folder = item['path']
+        bool = True
+        # After iterating through all items, check if both server and folder are found
+        bool = server and folder
+        if not server:
+            log.error(f"YAML is not described well for {key}: missing server")
+        if not folder:
+            log.error(f"YAML is not described well for {key}: missing folder")
+        if bool:
+
+            path, filename = extract_path_and_filename(server)
             if is_file_with_extension(filename):
-                log.info("Type: File")
-                last_dir = os.path.basename(os.path.normpath(path))
+                last_dir = get_last_directory(path)
                 full_path_to_check = os.path.join(local_target_directory, last_dir)
-                if os.path.exists(full_path_to_check) and os.path.isdir(full_path_to_check):
-                    log.info(f"The folder '{filename}' exists at the specified path.")
-                else:
-                    log.info(f"The folder '{filename}' does not exist at the specified path.")
-                    download_folder(client, path, local_target_directory)
-                scp_upload_input_folder(local_target_directory + "/last_dir", machine_found.dataDir,
+                if not os.path.exists(full_path_to_check):
+                    download_folder(client, path, full_path_to_check)
+                scp_upload_input_folder(full_path_to_check, os.path.join(machine_found.dataDir, last_dir),
                                         request.session['content'], machineID)
             else:
-                log.info("Type: Folder")
-                full_path_to_check = os.path.join(local_target_directory, filename)
-                # Check if the folder exists at the specified path
-                if os.path.exists(full_path_to_check) and os.path.isdir(full_path_to_check):
-                    log.info(f"The folder '{filename}' exists at the specified path.")
-                else:
-                    log.info(f"The folder '{filename}' does not exist at the specified path.")
-                    log.info("Try to download")
-                    # download_folder(client, path + "/filename", local_target_directory)
-                    ftp_conn = client
+                full_path_to_check = os.path.join(local_target_directory, folder)
+                if not os.path.exists(full_path_to_check):
                     ftp_folder_path = path + "/" + filename + "/"
-                    log.info("PATH FOLDER")
-                    log.info(ftp_folder_path)
-                    local_folder_path = local_target_directory
-                    log.info("ENTERING DOWNLOAD MODE")
+                    local_folder_path = full_path_to_check
                     ensure_local_directory_exists(local_folder_path)
-                    log.info("ENTERING DOWNLOAD MODE 2")
-                    # List items in the FTP directory
-
-                    items = ftp_conn.nlst(ftp_folder_path)
-                    log.info(items)
+                    items = client.nlst(ftp_folder_path)
                     for item in items:
                         local_item_path = os.path.join(local_folder_path, os.path.basename(item))
                         ftp_item_path = item
@@ -430,19 +455,19 @@ def download_input(workflow, request, machineID):
                         # Check if the item is a file or a folder
                         if '.' in os.path.basename(item):  # Assuming files have extensions
                             with open(local_item_path, 'wb') as file:
-                                log.info(f'RETR {ftp_item_path}', file.write)
-                                ftp_conn.retrbinary(f'RETR {ftp_item_path}', file.write)
+                                client.retrbinary(f'RETR {ftp_item_path}', file.write)
                         else:
-                            download_folder(ftp_conn, ftp_item_path, local_item_path)
+                            download_folder(client, ftp_item_path, local_item_path)
 
-                scp_upload_input_folder(local_target_directory + "/filename", machine_found.dataDir,
+                scp_upload_input_folder(full_path_to_check, os.path.join(machine_found.dataDir, folder),
                                         request.session['content'], machineID)
     client.quit()
     return
 
 
 class run_sim_async(threading.Thread):
-    def __init__(self, request, name, numNodes, name_sim, execTime, qos, checkpoint_bool, auto_restart_bool, eID, branch):
+    def __init__(self, request, name, numNodes, name_sim, execTime, qos, checkpoint_bool, auto_restart_bool, eID,
+                 branch):
         threading.Thread.__init__(self)
         self.request = request
         self.name = name
@@ -453,10 +478,9 @@ class run_sim_async(threading.Thread):
         self.checkpoint_bool = checkpoint_bool
         self.auto_restart_bool = auto_restart_bool
         self.eiD = eID
-        self.branch= branch
+        self.branch = branch
 
     def run(self):
-        log.info("STARTING")
         machine_found = Machine.objects.get(id=self.request.session['machine_chosen'])
         fqdn = machine_found.fqdn
         machine_folder = extract_substring(fqdn)
@@ -467,38 +491,55 @@ class run_sim_async(threading.Thread):
         wdirPath, nameWdir = wdir_folder(principal_folder)
         cmd1 = "source /etc/profile; mkdir -p " + principal_folder + "/" + nameWdir + "/workflows/; echo " + str(
             workflow) + " > " + principal_folder + "/" + nameWdir + "/workflows/" + str(
-            workflow_name) + "; cd " + principal_folder + "; BACKUPDIR=$(ls -td ./*/ | head -1); echo EXECUTION_FOLDER:$BACKUPDIR;"
+            self.name) + "; cd " + principal_folder + "; BACKUPDIR=$(ls -td ./*/ | head -1); echo EXECUTION_FOLDER:$BACKUPDIR;"
         ssh = connection(self.request.session["content"], machine_found.id)
         stdin, stdout, stderr = ssh.exec_command(cmd1)
 
         execution_folder = wdirPath + "/execution"
         workflow_folder = wdirPath + "/workflows"
-        Execution.objects.filter(eID=self.eiD).update(wdir=execution_folder, workflow_path=workflow_folder,
-                                                      name_workflow=workflow_name)
+
+        alya_output_server = None
+        for item in workflow.get('outputs', {}).get('alya-output', []):
+            if 'server' in item:
+                alya_output_server = item['server']
+                break
+        if alya_output_server:
+            Execution.objects.filter(eID=self.eiD).update(wdir=execution_folder, workflow_path=workflow_folder,
+                                                          name_workflow=workflow_name, results_ftp_path=alya_output_server)
+        else:
+            Execution.objects.filter(eID=self.eiD).update(wdir=execution_folder, workflow_path=workflow_folder,
+                                                          name_workflow=workflow_name,
+                                                          results_ftp_path=alya_output_server)
         self.request.session['workflow_path'] = workflow_folder
 
-        path_install_dir = machine_found.installDir
+        path_install_dir = os.path.join(machine_found.installDir, self.branch)
         param_machine = remove_numbers(machine_found.fqdn)
 
+
+
+
+
+
         local_folder = "/home/ubuntu/installDir"
-        log.info("CODE")
-        scp_upload_folder(local_folder, path_install_dir, self.request.session["content"], machine_found.id, self.branch)
-        log.info("INPUT")
+        scp_upload_code_folder(local_folder, path_install_dir, self.request.session["content"], machine_found.id,
+                               self.branch)
         download_input(workflow, self.request, machine_found.id)
         if self.checkpoint_bool:
-            cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; mkdir -p " + execution_folder + "; cd " + machine_found.installDir + "/scripts/" + machine_folder + "/;  source app-checkpoint.sh " + userMachine + " " + str(
-                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir + "" + self.branch
+            cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; mkdir -p " + execution_folder + "; cd " + path_install_dir + "/scripts/" + machine_folder + "/;  source app-checkpoint.sh " + userMachine + " " + str(
+                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir + " " + self.branch + " " + machine_found.dataDir
         else:
-            cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; mkdir -p " + execution_folder + "; cd " + machine_found.installDir + "/scripts/" + machine_folder + "/; source app.sh " + userMachine + " " + str(
-                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir + "" + self.branch
+            cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; mkdir -p " + execution_folder + "; cd " + path_install_dir + "/scripts/" + machine_folder + "/; source app.sh " + userMachine + " " + str(
+                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir + " " + self.branch + " " + machine_found.dataDir
+        log.info("COMMAND")
+        log.info(cmd2)
         stdin, stdout, stderr = ssh.exec_command(cmd2)
         stdout = stdout.readlines()
+        stderr = stderr.readlines()
         s = "Submitted batch job"
         var = ""
         while (len(stdout) == 0):
             time.sleep(1)
         if (len(stdout) > 1):
-            log.info(stdout)
             for line in stdout:
                 if (s in line):
                     jobID = int(line.replace(s, ""))
@@ -523,13 +564,11 @@ def run_sim(request):
                           {'machines': machines_done, 'checkConn': "no"})
         form = DocumentForm(request.POST, request.FILES)
         if form.is_valid():
-            branch= request.POST.get('branchChoice')
-            name = None
+            branch = request.POST.get('branchChoice')
             for filename, file in request.FILES.items():
                 uniqueID = uuid.uuid4()
-                name = file
-                nameE = (str(name).split(".")[0]) + "_" + str(uniqueID) + "." + str(name).split(".")[1]
-                name = nameE
+                nameE = (str(file).split(".")[0]) + "_" + str(uniqueID) + "." + str(file).split(".")[1]
+            name = nameE
             document = form.save(commit=False)
             document.document.name = name
             document.save()
@@ -558,7 +597,7 @@ def run_sim(request):
     else:
         form = DocumentForm()
         request.session['flag'] = 'first'
-        branches= get_github_repo_branches()
+        branches = get_github_repo_branches()
         checkConnBool = checkConnection(request)
         if not checkConnBool:
             machines_done = populate_executions_machines(request)
@@ -594,13 +633,14 @@ def start_exec(numNodes, name_sim, execTime, qos, name, request, auto_restart_bo
     form.name_sim = name_sim
     form.autorestart = auto_restart_bool
     form.machine = machine_found
+    form.results_ftp_path = ""
     form.save()
     return uID
 
 
 def results(request):
     if request.method == 'POST':
-        log.info("result")
+        pass
     else:
         jobID = request.session['jobIDdone']
         ssh = connection(request.session['content'], request.session['machine_chosen'])
@@ -629,18 +669,13 @@ def render_right(request):
 def delete_parent_folder(path, ssh):
     parent_folder = os.path.dirname(path)
     command = "rm -rf " + parent_folder + "/"
-    log.info(command)
     stdin, stdout, stderr = ssh.exec_command(command)
     return
 
 
 def deleteExecution(eIDdelete, request):
     ssh = connection(request.session['content'], request.session['machine_chosen'])
-    log.info(eIDdelete)
     exec = Execution.objects.filter(eID=eIDdelete).get()
-    log.info(exec.eID)
-    log.info(exec.jobID)
-    log.info(exec.wdir)
     delete_parent_folder(exec.wdir, ssh)
     if exec.eID != 0:
         command = "scancel " + str(exec.jobID)
@@ -669,6 +704,98 @@ def deleteExecutionHTTP(eIDdelete, request):
         return
     except:
         raise ValueError("The execution doesn't exist", 0)
+
+
+def ensure_ftp_directory_exists(ftp_conn, path):
+    try:
+        ftp_conn.cwd(path)
+    except Exception as e:
+        base_dir, _, folder = path.rpartition('/')
+        ensure_ftp_directory_exists(ftp_conn, base_dir)
+        ftp_conn.mkd(path)
+        ftp_conn.cwd(path)
+
+
+def upload_folder(ftp_conn, folder_path, ftp_folder_path):
+    log.info("upload_folder")
+    ftp_conn.dir()
+    ensure_ftp_directory_exists(ftp_conn, ftp_folder_path)
+
+    for item in os.listdir(folder_path):
+        log.info("upload_folder item: "+str(item))
+        local_item_path = os.path.join(folder_path, item)
+        ftp_item_path = os.path.join(ftp_folder_path, item)
+        log.info("local_item_path: " + str(local_item_path))
+        log.info("ftp_item_path: " + str(ftp_item_path))
+        if os.path.isdir(local_item_path):
+            upload_folder(ftp_conn, local_item_path, ftp_item_path)
+        else:
+            with open(local_item_path, 'rb') as file:
+                log.info("STOR "+str(ftp_item_path))
+                ftp_conn.storbinary(f'STOR {ftp_item_path}', file)
+    return
+
+
+def get_last_subdirectory(url):
+    # Split the URL by '/' and get the last element
+    return url.rstrip('/').split('/')[-1]
+
+
+def get_url_without_last_subdirectory(url):
+    # Split the URL by '/' and remove the last element
+    parts = url.split('/')[:-1]
+    # Join the remaining parts back together
+    return '/'.join(parts)
+
+
+def download_directory(sftp, remote_dir, local_dir):
+    log.info("download_directory")
+    os.makedirs(local_dir, exist_ok=True)
+    log.info(str(sftp.listdir_attr(remote_dir)))
+    for item in sftp.listdir_attr(remote_dir):
+        log.info(str(item))
+        remote_item = f"{remote_dir}/{item.filename}"
+        local_item = os.path.join(local_dir, item.filename)
+        log.info("remote_item: "+str(remote_item))
+        log.info("local_item: "+str(local_item))
+        if S_ISDIR(item.st_mode):  # Check if it's a folder
+            log.info("download_directory 1")
+            download_directory(sftp, remote_item, local_item)
+        else:  # It's a file, download it
+            log.info("download_directory 2")
+            sftp.get(remote_item, local_item)
+    return
+
+
+def copy_folder_hpc_to_service(request, service_local_path, remote_hpc_path):
+    log.info("copy_folder_hpc_to_service")
+    ssh = paramiko.SSHClient()
+    pkey = paramiko.RSAKey.from_private_key(StringIO(request.session["content"]))
+    machine_found = Machine.objects.get(id=request.session['machine_chosen'])  # Assuming this is your custom code
+
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(machine_found.fqdn, username=machine_found.user, pkey=pkey)
+    sftp = ssh.open_sftp()
+    log.info("copy_folder_hpc_to_service download_directory")
+    download_directory(sftp, remote_hpc_path, service_local_path)
+    sftp.close()
+    ssh.close()
+    return
+
+
+def upload_results(request, ftp_folder_path, hpc_folder_path):
+    log.info("upload_results")
+    local_service_folder = os.path.join("/home/ubuntu/uploadResults", get_last_subdirectory(ftp_folder_path))
+    copy_folder_hpc_to_service(request, local_service_folder, hpc_folder_path)
+    client = FTP_TLS()
+    client.connect(host=cfg.host, port=cfg.port)
+    client.login(user=cfg.user, passwd=cfg.passw)
+    client.prot_p()  # Switch to secure data connection
+    log.info("upload_results upload_results")
+    upload_folder(client, local_service_folder, get_url_without_last_subdirectory(ftp_folder_path))
+
+    client.quit()
+    return
 
 
 def executions(request):
@@ -856,18 +983,24 @@ class updateExecutions(threading.Thread):
 
 
 def update_table(request):
+    log.info("update_table")
     machine_found = Machine.objects.get(id=request.session['machine_chosen'])
     machineID = machine_found.id
     ssh = connection(request.session["content"], machineID)
     executions = Execution.objects.all().filter(author=request.user, machine=request.session['machine_chosen']).filter(
         Q(status="PENDING") | Q(status="RUNNING") | Q(status="INITIALIZING"))
-    log.info(executions)
     for executionE in executions:
-        log.info(executionE.jobID)
         stdin, stdout, stderr = ssh.exec_command(
             "sacct -j " + str(executionE.jobID) + " --format=jobId,user,nnodes,elapsed,state | sed -n 3,3p")
         stdout = stdout.readlines()
         values = str(stdout).split()
+
+        if str(values[4]) == "COMPLETED" and executionE.status != "COMPLETED":
+            log.info("update_table COMPLETED")
+            ftp_folder_path = executionE.results_ftp_path
+            results_path = "results"
+            local_folder_path = os.path.join(executionE.wdir, results_path)
+            upload_results(request, ftp_folder_path, local_folder_path)
         Execution.objects.filter(jobID=executionE.jobID).update(status=values[4], time=values[3],
                                                                 nodes=int(values[2]))
     return True
@@ -1030,7 +1163,7 @@ def checkpointing_noAutorestart(jobIDCheckpoint, request):
 
 def execution_failed(request):  # used to show a page when a execution ended with a bad results
     if request.method == 'POST':
-        log.info("")
+        pass
     else:
         jobID = request.session['jobIDfailed']
         ssh = connection(request.session['content'], request.session['machine_chosen'])
@@ -1046,8 +1179,24 @@ def execution_failed(request):  # used to show a page when a execution ended wit
         executionGet = Execution.objects.get(jobID=jobID)
         pathOut = executionGet.wdir + "/" + file + ".out"
         pathErr = executionGet.wdir + "/" + file + ".err"
+        contentOut = None
+        contentErr = None
+        sftp_client = ssh.open_sftp()
+        try:
+            with sftp_client.open(pathOut, 'r') as file:
+                contentOut = file.read()
+                contentOut = contentOut.decode('utf-8')
+        except FileNotFoundError:
+            log.error("Output file not found.")
+        try:
+            with sftp_client.open(pathErr, 'r') as file:
+                contentErr = file.read()
+                contentErr = contentErr.decode('utf-8')
+        except FileNotFoundError:
+            log.error("Error file not found.")
     return render(request, 'accounts/execution_failed.html',
-                  {'executionsDone': executionGet, 'pathOut': pathOut, 'pathErr': pathErr})
+                  {'executionsDone': executionGet, 'pathOut': pathOut, 'pathErr': pathErr, 'contentOut': contentOut,
+                   'contentErr': contentErr})
 
 
 def create_workflow(request):
@@ -1067,7 +1216,7 @@ def read_and_write(name):
             workflow = yaml.safe_load(file)
             return workflow
         except yaml.YAMLError as exc:
-            log.info(exc)
+            log.error(exc)
     return None
 
 
