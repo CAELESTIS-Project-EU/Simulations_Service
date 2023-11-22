@@ -3,7 +3,7 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-.. image:: ../logos/CaelestisLog.png
+.. image:: ./logos/CaelestisLog.png
    :width: 600px
    :align: left
 
@@ -60,17 +60,6 @@ The source code of dislib is available online at `Github <https://github.com/CAE
 Support
 -------
 
-If you have questions or issues about the Caelestis project you can contact us using `Contact Page
+If you have questions or issues about the Caelestis project you can contact us using the `Contact Page
 <https://www.caelestis-project.eu/contact/>`_.
-
-
-
-
-
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
 
