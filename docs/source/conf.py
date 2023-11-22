@@ -32,6 +32,8 @@ copyright = '2023, Caelestis'
 author = 'Barcelona Supercomputing Center (BSC)'
 
 autodoc_mock_imports = ['pycompss']
+language = "en"
+
 
 
 templates_path = ['_templates']
