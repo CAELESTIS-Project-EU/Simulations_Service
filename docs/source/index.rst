@@ -17,6 +17,21 @@
 |
 |
 |
+|
+|
+|
+|
+|
+|
+|
+|
+|
+|
+|
+|
+|
+|
+
 
 The CAELESTIS project, funded by the EU's Horizon Europe program, aims to revolutionize aircraft design and manufacturing towards achieving zero-carbon aviation. Here's a summarized overview of the project:
 
