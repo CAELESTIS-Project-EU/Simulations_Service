@@ -75,6 +75,69 @@ html_theme_options = {
 # Add any paths that contain custom themes here, relative to this directory.
 html_theme_path = [os.path.join(os.pardir, 'scipy-sphinx-theme', '_theme')]
 
+def linkcode_resolve(domain, info):
+    """
+    Determine the URL corresponding to Python object
+    """
+    if domain != 'py':
+        return None
 
+    modname = info['module']
+    fullname = info['fullname']
+
+    submod = sys.modules.get(modname)
+    if submod is None:
+        return None
+
+    obj = submod
+    for part in fullname.split('.'):
+        try:
+            obj = getattr(obj, part)
+        except Exception:
+            return None
+
+    # strip decorators, which would resolve to the source of the decorator
+    # possibly an upstream bug in getsourcefile, bpo-1764286
+    try:
+        unwrap = inspect.unwrap
+    except AttributeError:
+        pass
+    else:
+        obj = unwrap(obj)
+
+    try:
+        fn = inspect.getsourcefile(obj)
+    except Exception:
+        fn = None
+    if not fn:
+        return None
+
+    try:
+        source, lineno = inspect.getsourcelines(obj)
+    except Exception:
+        lineno = None
+
+    if lineno:
+        linespec = "#L%d-L%d" % (lineno, lineno + len(source) - 1)
+    else:
+        linespec = ""
+
+    modname = inspect.getmodule(obj).__name__
+
+    try:
+        branch = subp.getoutput(["git branch"]).split()[4]
+
+        # branch is origin/name or a hash in the case of the stable version
+        if "origin" in branch:
+            branch = branch.split("/")[1][:-1]
+        else:
+            branch = branch[:-1]
+
+    except subp.CalledProcessError as e:
+        print("Error getting branch name. I will use master:\n", e.output)
+        branch = "master"
+
+    return "http://github.com/bsc-wdc/dislib/blob/%s/%s.py%s" \
+           % (branch, modname.replace(".", "/"), linespec)
 
 
