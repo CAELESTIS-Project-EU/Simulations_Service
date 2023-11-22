@@ -3,15 +3,15 @@ info:
   title: ''
   version: ''
 paths:
-  /api/get_status_execution/{eID}/:
+  /simulations/execution/{eID}/:
     get:
-      operationId: get_status_execution
+      operationId: retrievehttp_execution
       description: 'Get the status of a specific execution given by the eID specified into the parameters'
       parameters:
       - name: eID
         in: path
         required: true
-        description: 'eID is the '
+        description: ''
         schema:
           type: string
       responses:
@@ -19,34 +19,13 @@ paths:
           content:
             application/json:
               schema: {}
-          description: 'Get the status back of the execution'
+           description: 'Get the status back of the execution'
           example: '{"message":"eID: f274dcfc-c20c-4784-8d63-eb73693fb365,name: test,jobID: 0,user: bsc19518,nodes: 4,status: INITIALIZING,autorestart: False,time: 00:00:00;"}'
       tags:
-      - api
-  /api/run_simulation/:
-    post:
-      operationId: run_simulation
-      description: 'Run a new simulation'
-      parameters: []
-      requestBody:
-        content:
-          multipart/form-data:
-            schema: {}
-          application/x-www-form-urlencoded:
-            schema: {}
-      responses:
-        '201':
-          content:
-            application/json:
-              schema: {}
-          description: 'Confirm that the simulation started successfully and gives back the unique ID of the new simulation.'
-          example: '{"message":"Simulation started successfully! ","execution_id":"xxxxxxx-xxxx-xxxxx-xxxx-xxxxxxx"}'
-      tags:
-      - api
-  /api/execution/{eID}/:
+      - simulations
     put:
-      operationId: updateexecution
-      description: ''
+      operationId: updatehttp_execution
+      description: 'Stop or restart a specific execution given by the eID specified into the parameters and given stop or start as status parameter'
       parameters:
       - name: eID
         in: path
@@ -69,11 +48,10 @@ paths:
               schema: {}
           description: ''
       tags:
-      - api
-  /api/delete_execution/{eID}/:
+      - simulations
     delete:
-      operationId: destroydelete_execution_api
-      description: ''
+      operationId: destroyhttp_execution
+      description: 'Delete a specific execution given by the eID specified into the parameters'
       parameters:
       - name: eID
         in: path
@@ -83,6 +61,25 @@ paths:
           type: string
       responses:
         '204':
-          description: ''
+          description: '{'message': 'Execution deleted successfully'}'
       tags:
-      - api
+      - simulations
+  /simulations/:
+    post:
+      operationId: createrun_simulation
+      description: 'Confirm that the simulation started successfully and gives back the unique ID of the new simulation.'
+      parameters: []
+      requestBody:
+        content:
+          multipart/form-data:
+            schema: {}
+          application/x-www-form-urlencoded:
+            schema: {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: {}
+          description: '{"message":"Simulation started successfully! ","execution_id":"xxxxxxx-xxxx-xxxxx-xxxx-xxxxxxx"}'
+      tags:
+      - simulations
