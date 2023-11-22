@@ -45,12 +45,11 @@ and Distributed Computing <https://www.bsc
 Documentation
 -------------
 
-* :doc:`Quickstart <quickstart>`
+
 * :doc:`User guide <user-guide>`
 * :doc:`API Reference <api-reference>`
 * :doc:`Development <development>`
-* :doc:`Glossary <glossary>`
-
+* :doc:`Requirements <requirements>`
 
 Source code
 -----------
