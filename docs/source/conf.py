@@ -10,48 +10,6 @@ project = 'Caelestis-Eu Simulations Service'
 copyright = '2023, Caelestis'
 author = 'Barcelona Supercomputing Center (BSC)'
 
-# -- General configuration ---------------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
-
-extensions = []
-
-templates_path = ['_templates']
-exclude_patterns = []
-
-
-
-# -- Options for HTML output -------------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
-
-html_theme = 'alabaster'
-html_static_path = ['_static']
-
-
-
-
-
-import inspect
-import os
-import subprocess as subp
-import sys
-
-
-sys.path.insert(0, os.path.abspath('../../'))
-
-
-extensions = [
-    'sphinx.ext.autodoc',
-    'sphinx.ext.intersphinx',
-    'sphinx.ext.linkcode',
-    'sphinx.ext.napoleon',
-    'sphinx.ext.autosummary',
-    'm2r',
-]
-
-napoleon_google_docstring = False
-napoleon_use_param = False
-napoleon_use_ivar = True
-
 autodoc_mock_imports = ['pycompss']
 
 
