@@ -69,7 +69,7 @@ Documentation
 Source code
 -----------
 
-The source code of dislib is available online at `Github <https://github.com/CAELESTIS-Project-EU/Simulations_Service>`_.
+The source code is available online at `Github <https://github.com/CAELESTIS-Project-EU/Simulations_Service>`_.
 
 Support
 -------
