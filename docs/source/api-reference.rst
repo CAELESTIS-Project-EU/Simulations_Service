@@ -17,7 +17,7 @@ After introducing the Web Graphical User Interface in the previous section, we n
 **API Endpoints**
 -----------------
 
-1. **Run a Simulation Workflow:**
+**Run a Simulation Workflow:**
    - Method: `POST`
    - Path: `/simulations/`
    - Content-Type: `multipart/form-data`
@@ -37,7 +37,7 @@ After introducing the Web Graphical User Interface in the previous section, we n
      a. `message`: Success or error message.
      b. `execution_id`: Execution identifier.
 
-2. **Stop a Simulation Workflow:**
+**Stop a Simulation Workflow:**
    - Method: `PUT`
    - Path: `/simulations/execution/<id>/?status=stop`
    - Content-Type: `multipart/form-data`
@@ -47,7 +47,7 @@ After introducing the Web Graphical User Interface in the previous section, we n
    - Response:
      a. `message`: Success or error message.
 
-3. **Get Status of a Simulation Workflow:**
+**Get Status of a Simulation Workflow:**
    - Method: `GET`
    - Path: `/simulations/execution/<id>/`
    - Content-Type: `multipart/form-data`
@@ -61,7 +61,7 @@ After introducing the Web Graphical User Interface in the previous section, we n
      d. `NumNodes`: Number of nodes used.
      e. `Status`: INITIALIZING | RUNNING | TIME_OUT | FINISHED | FAILED
 
-4. **Restart a Simulation Workflow:**
+**Restart a Simulation Workflow:**
    - Method: `PUT`
    - Path: `/simulations/execution/<id>/?status=restart`
    - Content-Type: `multipart/form-data`
@@ -71,7 +71,7 @@ After introducing the Web Graphical User Interface in the previous section, we n
    - Response:
      c. `message`: Success or error message.
 
-5. **Delete a Simulation Workflow:**
+**Delete a Simulation Workflow:**
    - Method: `DELETE`
    - Path: `/simulations/execution/<id>`
    - Content-Type: `multipart/form-data`
