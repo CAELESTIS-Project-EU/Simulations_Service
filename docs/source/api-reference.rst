@@ -22,62 +22,62 @@ After introducing the Web Graphical User Interface in the previous section, we n
    - Path: `/simulations/`
    - Content-Type: `multipart/form-data`
    - Content:
-     - Mandatory:
+     a. Mandatory:
        * `MachineChoice`: Cluster where to execute the workflow.
        * `SecToken`: Token for SSH key identification.
        * `NumNodes`: Number of nodes.
        * `ExecTime`: Maximum execution time.
-     - Optional:
+     b. Optional:
        * `Branch`: Version of the workflow templates.
        * `Checkpointing`: Enabling checkpointing in execution.
        * `Autorestart`: Enabling autorestart if execution times out.
        * `QoS`: Quality of Service according to the HPC machine.
        * `Name`: Name for the workflow simulation execution.
    - Response:
-     - `message`: Success or error message.
-     - `execution_id`: Execution identifier.
+     a. `message`: Success or error message.
+     b. `execution_id`: Execution identifier.
 
 2. **Stop a Simulation Workflow:**
    - Method: `PUT`
    - Path: `/simulations/execution/<id>/?status=stop`
    - Content-Type: `multipart/form-data`
    - Content:
-     - `MachineChoice`: Cluster for workflow execution.
-     - `SecToken`: Token for SSH key identification.
+     a. `MachineChoice`: Cluster for workflow execution.
+     b. `SecToken`: Token for SSH key identification.
    - Response:
-     - `message`: Success or error message.
+     a. `message`: Success or error message.
 
 3. **Get Status of a Simulation Workflow:**
    - Method: `GET`
    - Path: `/simulations/execution/<id>/`
    - Content-Type: `multipart/form-data`
    - Content:
-     - `MachineChoice`: Cluster for workflow execution.
-     - `SecToken`: Token for SSH key identification.
+     a. `MachineChoice`: Cluster for workflow execution.
+     b. `SecToken`: Token for SSH key identification.
    - Response:
-     - `eID`: Execution identifier.
-     - `Name`: Execution name.
-     - `User`: User for submission.
-     - `NumNodes`: Number of nodes used.
-     - `Status`: INITIALIZING | RUNNING | TIME_OUT | FINISHED | FAILED
+     a. `eID`: Execution identifier.
+     b. `Name`: Execution name.
+     c. `User`: User for submission.
+     d. `NumNodes`: Number of nodes used.
+     e. `Status`: INITIALIZING | RUNNING | TIME_OUT | FINISHED | FAILED
 
 4. **Restart a Simulation Workflow:**
    - Method: `PUT`
    - Path: `/simulations/execution/<id>/?status=restart`
    - Content-Type: `multipart/form-data`
    - Content:
-     - `MachineChoice`: Cluster for workflow execution.
-     - `SecToken`: Token for SSH key identification.
+     a. `MachineChoice`: Cluster for workflow execution.
+     b. `SecToken`: Token for SSH key identification.
    - Response:
-     - `message`: Success or error message.
+     c. `message`: Success or error message.
 
 5. **Delete a Simulation Workflow:**
    - Method: `DELETE`
    - Path: `/simulations/execution/<id>`
    - Content-Type: `multipart/form-data`
    - Content:
-     - `MachineChoice`: Cluster for workflow execution.
-     - `SecToken`: Token for SSH key identification.
+     a. `MachineChoice`: Cluster for workflow execution.
+     b. `SecToken`: Token for SSH key identification.
    - Response:
-     - `message`: Success or error message.
+     c. `message`: Success or error message.
 
