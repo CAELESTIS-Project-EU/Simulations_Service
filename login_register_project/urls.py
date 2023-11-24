@@ -15,19 +15,8 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from accounts.views import custom_404_view, custom_400_view, custom_403_view, custom_500_view, csrf_failure
-from django.conf import settings
-from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('accounts.urls')),
 ]
-
-from django.conf.urls import handler404, handler500, handler403, handler400
-
-handler404 = 'accounts.views.custom_404_view'
-handler500 = 'accounts.views.custom_500_view'
-handler403 = 'accounts.views.custom_403_view'
-handler400 = 'accounts.views.custom_400_view'
-CSRF_FAILURE_VIEW = 'accounts.views.csrf_failure'

@@ -4,9 +4,8 @@
     {% if user.is_authenticated %}
         <div class="card" style="border-radius: 15px;">
             <div class="card-body p-5">
-                <h2 class="text-center mb-5" style="text-decoration: underline;">
-                           <button type="button" class="btn btn-primary btn-xl" disabled>NEW MACHINE</button>
-                </h2>
+                <h2 class="text-uppercase text-center mb-5" style="text-decoration: underline;"><b>NEW MACHINE</b></h2>
+
                 <div class="wrapper-create-work">
                     <form method="post">
                         {% csrf_token %}
@@ -21,14 +20,6 @@
                         <div class="form-group">
                             <label class="font-weight-bold">WDIR</label>
                             {% render_field form.wdir type="text" class="form-control" placeholder="Insert the working directory path for the choosen machine" %}
-                        </div>
-                        <div class="form-group">
-                            <label class="font-weight-bold">INSTALLATION DIRECTORY</label>
-                            {% render_field form.installDir type="text" class="form-control" placeholder="Insert the installation directory path for the choosen machine" %}
-                        </div>
-                        <div class="form-group">
-                            <label class="font-weight-bold">DATA DIRECTORY</label>
-                            {% render_field form.dataDir type="text" class="form-control" placeholder="Insert the data directory path for the choosen machine" %}
                         </div>
                         {{ form.author.as_hidden }}
 
