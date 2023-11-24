@@ -47,7 +47,9 @@ The HPC Simulation Service automates data transfers and workflow execution, requ
     :width: 500px
 
 Once the SSH key authorization is set up, users can manage workflow execution by providing the security token when accessing the HPC Simulation service, as depicted in the figure above. The token is used for secure connection to the HPC site and for decrypting the stored private key.
-
+|
+|
+|
 ----------
 Workflow Execution in HPC
 ----------
