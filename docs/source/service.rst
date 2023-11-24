@@ -78,7 +78,7 @@ This method incorporates a dual-layer security mechanism that provides robust pr
 
 This system establishes a comprehensive security framework, protecting user machines effectively. The combination of SSH key pairs and unique security tokens offers both convenience and enhanced security, safeguarding users from potential unauthorized access.
 
-.. image:: ./images/key_decypt.png
+.. image:: ./images/key_decrypt.png
     :align: center
     :width: 500px
     
