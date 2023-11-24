@@ -12,7 +12,7 @@ The service is implemented using Django, Nginx, PostgreSQL, Gunicorn, and Parami
 
 .. image:: ./images/service_arch.png
     :align: center
-    :width: 500px
+    :width: 1000px
 
 ----------
 HPC Simulation Service Functionality
@@ -44,7 +44,7 @@ The HPC Simulation Service automates data transfers and workflow execution, requ
 
 .. image:: ./images/key.png
     :align: center
-    :width: 500px
+    :width: 1000px
 
 Once the SSH key authorization is set up, users can manage workflow execution by providing the security token when accessing the HPC Simulation service, as depicted in the figure above. The token is used for secure connection to the HPC site and for decrypting the stored private key.
 |
@@ -88,5 +88,5 @@ This service is designed to streamline the implementation and execution of dynam
 
 .. image:: ./images/gen_arch.png
     :align: center
-    :width: 500px
+    :width: 1000px
 
