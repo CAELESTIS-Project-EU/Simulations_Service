@@ -1,4 +1,5 @@
 import ftplib
+import shutil
 import uuid
 from io import StringIO
 from django.shortcuts import render, redirect
@@ -707,76 +708,86 @@ def deleteExecutionHTTP(eIDdelete, request):
 
 
 def ensure_ftp_directory_exists(ftp_conn, path):
-    try:
-        ftp_conn.cwd(path)
-    except Exception as e:
-        base_dir, _, folder = path.rpartition('/')
-        ensure_ftp_directory_exists(ftp_conn, base_dir)
-        ftp_conn.mkd(path)
-        ftp_conn.cwd(path)
+    # Normalize path and split
+    dirs = path.strip('/').split('/')
+    current_path = ''
 
+    for dir in dirs:
+        current_path += f"/{dir}"
+        try:
+            ftp_conn.cwd(current_path)
+        except Exception as e:
+            # Try to create directory if not exists
+            try:
+                ftp_conn.mkd(current_path)
+            except Exception as e:
+                log.error(f"Error creating directory {current_path}: {e}")
+                return False
+
+    return True
 
 def upload_folder(ftp_conn, folder_path, ftp_folder_path):
-    log.info("upload_folder")
-    ftp_conn.dir()
     ensure_ftp_directory_exists(ftp_conn, ftp_folder_path)
-
     for item in os.listdir(folder_path):
-        log.info("upload_folder item: "+str(item))
         local_item_path = os.path.join(folder_path, item)
         ftp_item_path = os.path.join(ftp_folder_path, item)
-        log.info("local_item_path: " + str(local_item_path))
-        log.info("ftp_item_path: " + str(ftp_item_path))
         if os.path.isdir(local_item_path):
             upload_folder(ftp_conn, local_item_path, ftp_item_path)
         else:
             with open(local_item_path, 'rb') as file:
-                log.info("STOR "+str(ftp_item_path))
-                ftp_conn.storbinary(f'STOR {ftp_item_path}', file)
+                dirs = ftp_item_path.strip('/').split('/')
+                current_path = ''
+                for dir in dirs:
+                    current_path += f"/{dir}"
+                ftp_conn.storbinary(f'STOR {current_path}', file)
     return
-
 
 def get_last_subdirectory(url):
     # Split the URL by '/' and get the last element
     return url.rstrip('/').split('/')[-1]
 
 
-def get_url_without_last_subdirectory(url):
-    # Split the URL by '/' and remove the last element
-    parts = url.split('/')[:-1]
-    # Join the remaining parts back together
-    return '/'.join(parts)
+def remove_protocol_and_domain(url):
+    # Remove protocol and domain
+    return re.sub(r'^.*?//[^/]+/', '', url)
 
 
-def download_directory(sftp, remote_dir, local_dir):
-    log.info("download_directory")
+from stat import S_ISDIR
+
+
+def download_directory(sftp, remote_dir, local_dir, depth=0, max_depth=10):
+    if depth > max_depth:
+        logging.warning("Maximum recursion depth reached.")
+        return
     os.makedirs(local_dir, exist_ok=True)
-    log.info(str(sftp.listdir_attr(remote_dir)))
-    for item in sftp.listdir_attr(remote_dir):
-        log.info(str(item))
+
+    try:
+        items = sftp.listdir_attr(remote_dir)
+    except Exception as e:
+        logging.error(f"Error listing directory {remote_dir}: {e}")
+        return
+
+    for item in items:
         remote_item = f"{remote_dir}/{item.filename}"
         local_item = os.path.join(local_dir, item.filename)
-        log.info("remote_item: "+str(remote_item))
-        log.info("local_item: "+str(local_item))
-        if S_ISDIR(item.st_mode):  # Check if it's a folder
-            log.info("download_directory 1")
-            download_directory(sftp, remote_item, local_item)
-        else:  # It's a file, download it
-            log.info("download_directory 2")
-            sftp.get(remote_item, local_item)
+
+        if S_ISDIR(item.st_mode):
+            download_directory(sftp, remote_item, local_item, depth=depth + 1, max_depth=max_depth)
+        else:
+            try:
+                sftp.get(remote_item, local_item)
+            except Exception as e:
+                log.error(f"Error downloading {remote_item}: {e}")
     return
 
 
 def copy_folder_hpc_to_service(request, service_local_path, remote_hpc_path):
-    log.info("copy_folder_hpc_to_service")
     ssh = paramiko.SSHClient()
     pkey = paramiko.RSAKey.from_private_key(StringIO(request.session["content"]))
     machine_found = Machine.objects.get(id=request.session['machine_chosen'])  # Assuming this is your custom code
-
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     ssh.connect(machine_found.fqdn, username=machine_found.user, pkey=pkey)
     sftp = ssh.open_sftp()
-    log.info("copy_folder_hpc_to_service download_directory")
     download_directory(sftp, remote_hpc_path, service_local_path)
     sftp.close()
     ssh.close()
@@ -784,16 +795,27 @@ def copy_folder_hpc_to_service(request, service_local_path, remote_hpc_path):
 
 
 def upload_results(request, ftp_folder_path, hpc_folder_path):
-    log.info("upload_results")
     local_service_folder = os.path.join("/home/ubuntu/uploadResults", get_last_subdirectory(ftp_folder_path))
     copy_folder_hpc_to_service(request, local_service_folder, hpc_folder_path)
     client = FTP_TLS()
-    client.connect(host=cfg.host, port=cfg.port)
-    client.login(user=cfg.user, passwd=cfg.passw)
+    try:
+        client.connect(host=cfg.host, port=cfg.port)
+        client.login(user=cfg.user, passwd=cfg.passw)
+    except ConnectionError as conn_error:
+        # Handle connection-related errors
+        log.error(f"Connection Error: {conn_error}")
+    except TimeoutError as timeout_error:
+        # Handle timeout-related errors
+        log.error(f"Timeout Error: {timeout_error}")
+    except Exception as e:
+        # Handle other exceptions
+        log.error(f"An error occurred: {e}")
     client.prot_p()  # Switch to secure data connection
-    log.info("upload_results upload_results")
-    upload_folder(client, local_service_folder, get_url_without_last_subdirectory(ftp_folder_path))
-
+    client.set_debuglevel(2)
+    upload_folder(client, local_service_folder, remove_protocol_and_domain(ftp_folder_path))
+    if os.path.exists(local_service_folder):
+        # Remove the folder and all its contents
+        shutil.rmtree(local_service_folder)
     client.quit()
     return
 
@@ -837,6 +859,7 @@ def executions(request):
             user, fqdn = get_name_fqdn(request.POST.get('machineChoice'))
             machine_found = Machine.objects.get(author=request.user, user=user, fqdn=fqdn)
             obj = Key_Gen.objects.filter(machine_id=machine_found.id).get()
+
             private_key = obj.private_key
             try:
                 try:
@@ -855,7 +878,6 @@ def executions(request):
                 return False
             request.session["content"] = content
             request.session['machine_chosen'] = machine_found.id
-
             c = Connection()
             c.user = request.user
             c.status = "Active"
@@ -983,7 +1005,6 @@ class updateExecutions(threading.Thread):
 
 
 def update_table(request):
-    log.info("update_table")
     machine_found = Machine.objects.get(id=request.session['machine_chosen'])
     machineID = machine_found.id
     ssh = connection(request.session["content"], machineID)
@@ -996,7 +1017,6 @@ def update_table(request):
         values = str(stdout).split()
 
         if str(values[4]) == "COMPLETED" and executionE.status != "COMPLETED":
-            log.info("update_table COMPLETED")
             ftp_folder_path = executionE.results_ftp_path
             results_path = "results"
             local_folder_path = os.path.join(executionE.wdir, results_path)
@@ -1472,21 +1492,6 @@ def remove_numbers(input_str):
         # If there are not enough parts, return the original string
         return input_str
 
-
-def upload_folder(ftp, folder_path):
-    for item in os.listdir(folder_path):
-        item_path = os.path.join(folder_path, item)
-        if os.path.isdir(item_path):
-            try:
-                ftp.mkd(item)  # Try to create directory
-            except Exception as e:
-                print(f"Could not create directory {item}: {e}")
-            ftp.cwd(item)  # Change to the directory
-            upload_folder(ftp, item_path)  # Recursive call to upload folder's content
-            ftp.cwd('..')  # Change back to parent directory
-        else:
-            with open(item_path, 'rb') as file:
-                ftp.storbinary(f'STOR {item}', file)  # Upload file
 
 
 def download_folder(ftp, path, local_target_directory):
