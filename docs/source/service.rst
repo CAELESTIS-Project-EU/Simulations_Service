@@ -46,7 +46,7 @@ The HPC Simulation Service automates the data transfers and execution of the wor
 4. **Public Key Authorization in the HPC**
    - The user is responsible for placing the received public key in the “authorized_keys” file on the defined machine.
    - This public key serves as an identifier, allowing connections only from those with the corresponding private key.
- machine. This public key acts as an identifier, allowing only those with the corresponding private key to establish a connection.
+
 
 
 .. image:: ./images/key.png
@@ -124,8 +124,6 @@ As shown in the figure below, the HPC Simulation Service automates various phase
 9. **Upload Result Files**
    - For permanent storage, the service uploads the result files to the FTP server.
 
-**Aiming for Streamlined Workflow Execution**
----------------------------------------------
 
 This service is designed to streamline the implementation and execution of dynamic workflows. By differentiating between the overall workflow definition and the specification of individual phases, it overcomes previous static limitations. This allows for modular integration of various phases across workflows during setup, enhancing flexibility and efficiency.
 
