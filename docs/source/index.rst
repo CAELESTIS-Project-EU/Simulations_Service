@@ -60,7 +60,7 @@ and Distributed Computing <https://www.bsc
 Documentation
 -------------
 
-
+* :doc:`Service <service>`
 * :doc:`User guide <user-guide>`
 * :doc:`API Reference <api-reference>`
 * :doc:`YAML file <yaml-file>`
