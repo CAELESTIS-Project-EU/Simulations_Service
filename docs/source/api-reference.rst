@@ -23,16 +23,16 @@ After introducing the Web Graphical User Interface in the previous section, we n
    - Content-Type: `multipart/form-data`
    - Content:
      - Mandatory:
-       - `MachineChoice`: Cluster where to execute the workflow.
-       - `SecToken`: Token for SSH key identification.
-       - `NumNodes`: Number of nodes.
-       - `ExecTime`: Maximum execution time.
+       * `MachineChoice`: Cluster where to execute the workflow.
+       * `SecToken`: Token for SSH key identification.
+       * `NumNodes`: Number of nodes.
+       * `ExecTime`: Maximum execution time.
      - Optional:
-       - `Branch`: Version of the workflow templates.
-       - `Checkpointing`: Enabling checkpointing in execution.
-       - `Autorestart`: Enabling autorestart if execution times out.
-       - `QoS`: Quality of Service according to the HPC machine.
-       - `Name`: Name for the workflow simulation execution.
+       * `Branch`: Version of the workflow templates.
+       * `Checkpointing`: Enabling checkpointing in execution.
+       * `Autorestart`: Enabling autorestart if execution times out.
+       * `QoS`: Quality of Service according to the HPC machine.
+       * `Name`: Name for the workflow simulation execution.
    - Response:
      - `message`: Success or error message.
      - `execution_id`: Execution identifier.
