@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title> CAELESTIS </title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.8/css/all.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.16.0/umd/popper.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js"></script>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css"
+          integrity="sha384-DyZ88mC6Up2uqS4h/KRgHuoeGwBcD4Ng9SiP4dIRy0EXTlnuz47vAwmeGwVChigm" crossorigin="anonymous"/>
+
+    {% load widget_tweaks %}
+    {% load static %}
+    <script type="text/javascript">
+        $(document).ready(function () {
+            $(function () {
+                $("#some_flag").dialog({
+                    modal: true,
+                    closeOnEscape: false,
+                    dialogClass: "no-close",
+                    resizable: false,
+                    draggable: false,
+                    width: 600,
+                    buttons: [
+                        {
+                            text: "OK",
+                            click: function () {
+                                $(this).dialog("close");
+                            }
+                        }
+                    ]
+                });
+            });
+        });
+    </script>
+    <style>
+        .fa {
+            padding: 5px;
+            font-size: 25px;
+            width: 80px;
+        }
+
+        .inputfield input {
+            margin-bottom: 10px;
+        }
+
+        .inputlabel label {
+            margin-bottom: 17px;
+        }
+
+        .wrapper {
+            text-align: center;
+            padding-top: 8em;
+            font-size: 29px;
+        }
+
+        .wrapper-create-work {
+            text-align: center;
+        }
+
+        .button {
+            align: center;
+            padding-top: 8em;
+            font-size: 29px;
+        }
+
+        .mainclass {
+            background: #84fab0;
+            background: -webkit-linear-gradient(to right, rgba(132, 250, 176, 0.5), rgba(143, 211, 244, 0.5));
+            background: linear-gradient(to right, rgba(132, 250, 176, 0.5), rgba(143, 211, 244, 0.5))
+        }
+
+        .gradient-custom-4 {
+            background: #84fab0;
+            background: -webkit-linear-gradient(to right, rgba(132, 250, 176, 1), rgba(143, 211, 244, 1));
+            background: linear-gradient(to right, rgba(132, 250, 176, 1), rgba(143, 211, 244, 1))
+        }
+
+        .mainclass {
+            background: #84fab0;
+            background: -webkit-linear-gradient(to right, rgba(132, 250, 176, 0.5), rgba(143, 211, 244, 0.5));
+            background: linear-gradient(to right, rgba(132, 250, 176, 0.5), rgba(143, 211, 244, 0.5))
+        }
+
+        .gradient-custom-4 {
+            background: #84fab0;
+        ) background: -webkit-linear-gradient(to right, rgba(132, 250, 176, 1), rgba(143, 211, 244, 1));
+            background: linear-gradient(to right, rgba(132, 250, 176, 1), rgba(143, 211, 244, 1))
+        }
+
+        * {
+            margin: 0;
+        }
+
+        html, body {
+            height: 100%;
+        }
+
+        .content {
+            min-height: 100%;
+            height: auto !important; /*min-height hack*/
+            height: 100%; /*min-height hack*/
+            margin-bottom: -4em; /*Negates #push on longer pages*/
+        }
+    </style>
+</head>
+<body>
+<div>
+    <nav class="navbar navbar bg-primary navbar-dark">
+        <div class="col-sm-6">
+            <a class="navbar-brand" href="/dashboard"> <img src="{% static 'CaelestisLog1.png' %}" style="width: 20%">
+            </a>
+        </div>
+        <div class="col-sm-6" style="text-align:right;">
+            <div class="d-flex flex-row-reverse">
+                {% if user.is_authenticated %}
+                    <div class="p-2">
+                        <a class="navbar-brand" href="/dashboard" style="alignment: right">HOME</a>
+                    </div>
+                    <div class="p-2">
+                        <a class="navbar-brand" href="/logout" style="alignment: right">LOGOUT</a>
+                    </div>
+                {% else %}
+                    <div class="p-2">
+                        <a class="navbar-brand" href="/loginpage" style="text-align:right;"> Login </a>
+                    </div>
+                    <div class="p-2">
+                        <a class="navbar-brand" href="/registerpage" style="text-align:right;"> Register </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+</div>
+<div class="mainclass content">
+    {% include 'accounts/message.html' %}
+    {% block content %}
+    {% endblock %}
+</div>
+</body>
+</html>
+
+
