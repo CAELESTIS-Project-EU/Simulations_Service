@@ -4,8 +4,10 @@
     {% if user.is_authenticated %}
         <div class="card" style="border-radius: 15px;">
             <div class="card-body p-5">
-                <h2 class="text-uppercase text-center mb-5" style="text-decoration: underline;"><b>SSH keys
-                    generation</b></h2>
+                <h2 class="text-center mb-5" style="text-decoration: underline;">
+                           <button type="button" class="btn btn-primary btn-xl" disabled>SSH keys
+                    generation</button>
+                </h2>
                 {% if firstCheck != "yes" %}
                     <div class="wrapper-create-work">
                         <form method="post">

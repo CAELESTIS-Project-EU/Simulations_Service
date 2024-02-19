@@ -1,31 +1,34 @@
 {% extends './dashboard.html' %}
-
+{% load widget_tweaks %}
 {% block dashboard %}
     {% if user.is_authenticated %}
         <div class="card" style="border-radius: 15px;">
             <div class="card-body p-150">
-                <h2 class="text-uppercase text-center mb-5" style="text-decoration: underline;"><b>RUN YOUR
-                    SIMULATION</b></h2>
+                <h2 class="text-center mb-5" style="text-decoration: underline;">
+                           <button type="button" class="btn btn-primary btn-xl" disabled>{{ machine_chosen }}</button>
+                </h2>
+                                {% csrf_token %}
                 <div class="wrapper-create-work">
                     <form method="post" enctype="multipart/form-data">
                         {% csrf_token %}
-                        <select id="machineChoice" name="machineChoice" class="btn btn-secondary dropdown-toggle">
-                            {% if choice %}
-                                <option>{{ choice }}</option>
-                            {% else %}
-                                {% for m in machines %}
-                                    <option>{{ m }}</option>
+                        {% if branches %}
+                        <label class="font-weight-bold">Github's branch</label>
+                        <br>
+                        <select id="branchChoice" name="branchChoice" class="btn btn-secondary dropdown-toggle">
+
+                                {% for branch in branches %}
+                                    <option>{{ branch }}</option>
                                 {% endfor %}
-                            {% endif %}
                         </select>
-                        <small id="emailHelp" class="form-text text-muted">Choose the machine</small>
+                        {% endif %}
                         <br>
                         <input hidden type="text" name="user" value="{{ user.username }}"/>
                         <div class="form-group" style="align-content: center">
-                            <!--<label class="font-weight-bold">Token</label>
-                            <input type="password" name="token" class="form-control" placeholder="Enter your Token">
-                            <small class="form-text text-muted">We'll never store your token.</small>
-                            <br>-->
+                            <label class="font-weight-bold">Name of the simulation</label>
+                            <input type="text" name="name_sim" class="form-control"
+                                   placeholder="Choose a name for the simulation (or a random name will be assigned)">
+                            <small class="form-text text-muted">What's the simulation's name?</small>
+                            <br>
                             <label class="font-weight-bold">Number of nodes</label>
                             <input type="text" name="numNodes" class="form-control"
                                    placeholder="Enter the number of nodes">
@@ -41,10 +44,33 @@
                                    placeholder="Enter the queue you want to use">
                             <small class="form-text text-muted">QOS (default bsc_cs)</small>
                             <br>
-                            {{ form.as_p }}
+                            <label class="font-weight-bold">Checkpointing</label>
+                            <br>
+                            <label class="switch">
+                                <input type="checkbox" name="checkpoint_flag">
+                                <span class="slider round"></span>
+                            </label>
+                            <small class="form-text text-muted">Allows checkpointing</small>
+                            <br>
+                            <br>
+
+
+                            <label class="font-weight-bold">Auto restart for Checkpointing</label>
+                            <br>
+                            <label class="switch">
+                                <input type="checkbox" name="auto_restart">
+                                <span class="slider round"></span>
+                            </label>
+                            <small class="form-text text-muted">Allows auto restarting from the checkpoint (If you activate this flat, also the previous flag will be considered active)</small>
+
+                            <br>
+                            <label class="form-label" for="customFile">Input file</label>
+                            {% render_field form.document type="file" class="form-control" id="customFile" placeholder="Upload your workflow definition" %}
+                            <small class="form-text text-muted">Upload your workflow's definition</small>
+
                         </div>
                         <br>
-                        <button type="submit" class="btn btn-primary fa fa-play-circle"></button>
+                        <button type="submit" class="btn btn-primary fa fa-play-circle" onclick="this.disabled=true,this.form.submit();"></button>
                     </form>
                     {% if flag == "second" %}
                         <div class="alert alert-danger" role="alert">

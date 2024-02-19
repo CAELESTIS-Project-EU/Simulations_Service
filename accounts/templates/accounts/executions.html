@@ -6,8 +6,8 @@
             <div class="card-body p-5">
                 {% if firstCheck != "no" %}
                     {% if checkConn == "no" %}
-                        <h2 class="text-uppercase text-center mb-5" style="text-decoration: underline;">
-                            <b>CONNECTION</b>
+                        <h2 class="text-center mb-5" style="text-decoration: underline;">
+                           <button type="button" class="btn btn-primary btn-xl" disabled>Connection</button>
                         </h2>
                         <div class="wrapper-create-work">
                             <form method="post" enctype="multipart/form-data">
@@ -29,16 +29,34 @@
                                 <button type="submit" name="connection" class="btn btn-primary fa fa-plug"></button>
                             </form>
                         </div>
+                        {% if errorToken == "yes" %}
+                            <div title="Some Flag">
+                                <div class="alert alert-danger" role="alert">
+                                    Provided token is wrong!
+                                </div>
+                            </div>
+                        {% endif %}
                     {% else %}
-                        <h2 class="text-uppercase text-center mb-5" style="text-decoration: underline;">
-                            <b>EXECUTIONS</b>
+                        {% if machine_chosen %}
+
+
+                        <h2 class="text-center mb-5" style="text-decoration: underline;">
+                           <button type="button" class="btn btn-primary btn-xl" disabled>{{ machine_chosen }}</button>
                         </h2>
+                        {% endif %}
                         <div class="d-flex ">
                             <div class="p-2 mr-auto">
-                                <a href="/run_sim">New execution
-                                    <button type="button" class="btn btn-success fa fa-plus-circle"></button>
-                                </a>
+                                <form method="POST">
+                                    {% csrf_token %}
+                                    <input hidden value="{{ machine_chosen }}"
+                                           name="machine_chosen_value">
+                                    <button type="submit" name="run_sim"
+                                            class="btn btn-success fa fa-plus-circle">
+                                    </button>
+                                </form>
+
                             </div>
+
                             <div class="p-2 ">
                                 <form method="post">
                                     {% csrf_token %}
@@ -61,7 +79,9 @@
                                                 <th scope="col">User</th>
                                                 <th scope="col">Nodes</th>
                                                 <th scope="col">Status</th>
+                                                <th scope="col">Autorestart</th>
                                                 <th scope="col">Time</th>
+                                                <th></th>
                                                 <th></th>
                                             </tr>
                                             </thead>
@@ -69,19 +89,31 @@
                                                 <tbody>
 
                                                 <tr style="text-align: center">
-                                                    <td>{{ e.name_workflow }}</td>
+                                                    <td>{{ e.name_sim }}</td>
                                                     <td>{{ e.jobID }}</td>
                                                     <td>{{ e.user }}</td>
                                                     <td>{{ e.nodes }}</td>
                                                     <td>{{ e.status }}</td>
+                                                    <td>{{ e.autorestart }}</td>
                                                     <td>{{ e.time }}</td>
                                                     <td>
                                                         <form method="POST">
                                                             {% csrf_token %}
-                                                            <input hidden value="{{ e.jobID }}"
+                                                            <input hidden value="{{ e.eID }}"
                                                                    name="stopExecutionValue">
-                                                            <button type="submit" name="stopExecution"
+                                                            <button  type="submit" name="stopExecution"
                                                                     class="btn btn-primary">STOP
+                                                            </button>
+
+                                                        </form>
+                                                    </td>
+                                                    <td>
+                                                        <form method="POST">
+                                                            {% csrf_token %}
+                                                            <input hidden value="{{ e.eID }}"
+                                                                   name="deleteExecutionValue">
+                                                            <button  type="submit" name="deleteExecution"
+                                                                    class="btn btn-primary fa fa-trash">
                                                             </button>
                                                         </form>
                                                     </td>
@@ -102,29 +134,44 @@
                                         <table class="table">
                                             <thead>
                                             <tr>
+                                                <th scope="col">Name</th>
                                                 <th scope="col">JobID</th>
                                                 <th scope="col">User</th>
                                                 <th scope="col">Nodes</th>
                                                 <th scope="col">Status</th>
+                                                <th scope="col">Autorestart</th>
                                                 <th scope="col">Time</th>
+                                                <th scope="col"></th>
                                             </tr>
                                             </thead>
                                             {% for e in executionsDone %}
                                                 <tbody>
                                                 <tr>
+                                                    <td>{{ e.name_sim }}</td>
                                                     <td>
                                                         <form method="POST">
                                                             {% csrf_token %}
                                                             <input hidden value="{{ e.jobID }}"
                                                                    name="resultExecutionValue">
-                                                            <button type="submit" name="resultExecution"
+                                                            <button  type="submit" name="resultExecution"
                                                                     class="btn btn-primary">{{ e.jobID }}</button>
                                                         </form>
                                                     </td>
                                                     <td>{{ e.user }}</td>
                                                     <td>{{ e.nodes }}</td>
                                                     <td>{{ e.status }}</td>
+                                                    <td>{{ e.autorestart }}</td>
                                                     <td>{{ e.time }}</td>
+                                                    <td>
+                                                        <form method="POST">
+                                                            {% csrf_token %}
+                                                            <input hidden value="{{ e.eID }}"
+                                                                   name="deleteExecutionValue">
+                                                            <button  type="submit" name="deleteExecution"
+                                                                    class="btn btn-primary fa fa-trash">
+                                                            </button>
+                                                        </form>
+                                                    </td>
                                                 </tr>
 
                                                 </tbody>
@@ -138,34 +185,49 @@
                                 </div>
                                 <div class="rounded" style="outline: 2px solid black;">
                                     <p class="h4" style="text-align: center">Timeout executions:</p>
-                                    {% if executionsCheckpoint %}
+                                    {% if executionsTimeout %}
 
                                         <table class="table">
                                             <thead>
                                             <tr>
+                                                <th scope="col">Name</th>
                                                 <th scope="col">JobID</th>
                                                 <th scope="col">User</th>
                                                 <th scope="col">Nodes</th>
                                                 <th scope="col">Status</th>
+                                                <th scope="col">Autorestart</th>
                                                 <th scope="col">Time</th>
+                                                <th scope="col"></th>
                                             </tr>
                                             </thead>
-                                            {% for e in executionsCheckpoint %}
+                                            {% for e in executionsTimeout %}
                                                 <tbody>
                                                 <tr>
+                                                    <td>{{ e.name_sim }}</td>
                                                     <td>
                                                         <form method="POST">
                                                             {% csrf_token %}
                                                             <input hidden value="{{ e.jobID }}"
                                                                    name="timeoutExecutionValue">
-                                                            <button type="submit" name="timeoutExecution"
+                                                            <button  type="submit" name="timeoutExecution"
                                                                     class="btn btn-primary">{{ e.jobID }}</button>
                                                         </form>
                                                     </td>
                                                     <td>{{ e.user }}</td>
                                                     <td>{{ e.nodes }}</td>
                                                     <td>{{ e.status }}</td>
+                                                    <td>{{ e.autorestart }}</td>
                                                     <td>{{ e.time }}</td>
+                                                    <td>
+                                                        <form method="POST">
+                                                            {% csrf_token %}
+                                                            <input hidden value="{{ e.eID }}"
+                                                                   name="deleteExecutionValue">
+                                                            <button  type="submit" name="deleteExecution"
+                                                                    class="btn btn-primary fa fa-trash">
+                                                            </button>
+                                                        </form>
+                                                    </td>
                                                 </tr>
 
                                                 </tbody>
@@ -183,29 +245,44 @@
                                         <table class="table">
                                             <thead>
                                             <tr>
+                                                <th scope="col">Name</th>
                                                 <th scope="col">JobID</th>
                                                 <th scope="col">User</th>
                                                 <th scope="col">Nodes</th>
                                                 <th scope="col">Status</th>
+                                                <th scope="col">Autorestart</th>
                                                 <th scope="col">Time</th>
+                                                <th scope="col"></th>
                                             </tr>
                                             </thead>
                                             {% for e in executionsFailed %}
                                                 <tbody>
                                                 <tr>
+                                                    <td>{{ e.name_sim }}</td>
                                                     <td>
                                                         <form method="POST">
                                                             {% csrf_token %}
                                                             <input hidden value="{{ e.jobID }}"
                                                                    name="failedExecutionValue">
-                                                            <button type="submit" name="failedExecution"
+                                                            <button  type="submit" name="failedExecution"
                                                                     class="btn btn-primary">{{ e.jobID }}</button>
                                                         </form>
                                                     </td>
                                                     <td>{{ e.user }}</td>
                                                     <td>{{ e.nodes }}</td>
                                                     <td>{{ e.status }}</td>
+                                                    <td>{{ e.autorestart }}</td>
                                                     <td>{{ e.time }}</td>
+                                                    <td>
+                                                        <form method="POST">
+                                                            {% csrf_token %}
+                                                            <input hidden value="{{ e.eID }}"
+                                                                   name="deleteExecutionValue">
+                                                            <button  type="submit" name="deleteExecution"
+                                                                    class="btn btn-primary fa fa-trash">
+                                                            </button>
+                                                        </form>
+                                                    </td>
                                                 </tr>
                                                 </tbody>
                                             {% endfor %}
@@ -224,7 +301,6 @@
                                                     class="btn btn-primary">DISCONNECT
                                             </button>
                                         </form>
-
                                     </div>
                                 </div>
                             </div>

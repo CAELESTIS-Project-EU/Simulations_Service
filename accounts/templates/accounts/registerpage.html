@@ -1,54 +1,56 @@
 {% extends './home.html' %}
 
 {% block content %}
-          <div class="card" style="border-radius: 15px;">
-            <div class="card-body p-5">
-              <h2 class="text-uppercase text-center mb-5" style="text-decoration: underline;"><b>SIGN UP</b></h2>
-              <form method="POST" enctype="multipart/form-data" class="inputfield">
+    <div class="card" style="border-radius: 15px;">
+        <div class="card-body p-5">
+
+            <h2 class="text-uppercase text-center mb-5" style="text-decoration: underline;"><b>SIGN UP</b></h2>
+            <form method="POST" enctype="multipart/form-data" class="inputfield">
                 {% csrf_token %}
-
                 <div class="container">
-                  <div class="row">
-                    <div class="col-sm">
-                      <label class="form-label">Username</label>
+                    <div class="row">
+                        <div class="col-sm">
+                            <label class="form-label">Username</label>
+                            {{ form.username }}
+                        </div>
                     </div>
-                    <div class="col-sm">
-                      {{form.username}}
+                    <div class="row">
+                        <div class="col-sm">
+                            <label class="form-label">Email</label>
+                            {{ form.email }}
+                        </div>
                     </div>
-                  </div>
-
-                  <div class="row">
-                    <div class="col-sm">
-                        <label class="form-label" >Email</label>
+                    <div class="row">
+                        <div class="col-sm">
+                            <label class="form-label">Password</label>
+                            {{ form.password1 }}
+                        </div>
                     </div>
-                    <div class="col-sm">
-                      {{form.email}}
+                    <div class="row">
+                        <div class="col-sm">
+                            <label class="form-label" for="typePasswordX-2">Confirm Password</label>
+                            {{ form.password2 }}
+                        </div>
                     </div>
-                  </div>
-
-                  <div class="row">
-                    <div class="col-sm">
-                        <label class="form-label">Password</label>
-                    </div>
-                    <div class="col-sm">
-                      {{form.password1}}
-                    </div>
-                  </div>
-
-                  <div class="row">
-                    <div class="col-sm">
-                        <label class="form-label" for="typePasswordX-2">Confirm Password</label>
-                    </div>
-                    <div class="col-sm">
-                      {{form.password2}}
-                    </div>
-                  </div>
                 </div>
+                {% for field in form %}
+                    {% if field.errors %}
+                        <div class="d-flex justify-content-center" style="padding: 25px 150px;">
+                            <div class="alert alert-danger" style="text-align: center" role="alert">
+                                {{ field.errors }}
+                            </div>
+                        </div>
+                    {% endif %}
+                {% endfor %}
                 <div class="d-flex justify-content-center" style="padding: 25px 150px;">
-                  <button type="submit" class="btn btn-success btn-block btn-lg gradient-custom-4 text-body" value="Submit">Register</button>
+                    <button type="submit" class="btn btn-success btn-block btn-lg gradient-custom-4 text-body"
+                            value="Submit">Register
+                    </button>
                 </div>
-                <p class="text-center text-muted mt-5 mb-0">Have already an account? <a href="/loginpage" class="fw-bold text-body"><u>Login here</u></a></p>
-              </form>
-            </div>
-          </div>
+                <p class="text-center text-muted mt-5 mb-0">Have already an account? <a href="/loginpage"
+                                                                                        class="fw-bold text-body"><u>Login
+                    here</u></a></p>
+            </form>
+        </div>
+    </div>
 {% endblock %}

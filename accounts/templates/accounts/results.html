@@ -4,7 +4,9 @@
   {% if user.is_authenticated %}
       <div class="card" style="border-radius: 15px;">
             <div class="card-body p-5">
-                <h2 class="text-uppercase text-center mb-5" style="text-decoration: underline;"><b>RESULT</b></h2>
+                <h2 class="text-center mb-5" style="text-decoration: underline;">
+                           <button type="button" class="btn btn-primary btn-xl" disabled>RESULT</button>
+                </h2>
               <div class="wrapper-create-work">
             <script>
                             function copyToClipboard(element) {
