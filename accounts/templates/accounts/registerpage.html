@@ -32,6 +32,14 @@
                             {{ form.password2 }}
                         </div>
                     </div>
+                    <div class="row">
+                        <div class="col-sm">
+                        </div>
+                        <div class="col-sm">
+                            <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+                            <div class="g-recaptcha" data-sitekey="6LcX4YQpAAAAAGTp_Y60ts5IPd9hjHfeNh9tRb6z"></div>
+                        </div>
+                    </div>
                 </div>
                 {% for field in form %}
                     {% if field.errors %}

@@ -2,13 +2,15 @@ from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.forms import User
 from django import forms
 from accounts.models import Document, WorkFlow, Execution, Key_Gen, Machine, Connection, Mesh, userMesh
-
+from django_recaptcha.fields import ReCaptchaField
+from django_recaptcha.widgets import ReCaptchaV2Checkbox
 
 class CreateUserForm(UserCreationForm):
     class Meta:
         model = User
         fields = ['username', 'email', 'password1', 'password2']
 
+    captcha = ReCaptchaField(widget=ReCaptchaV2Checkbox)
 
 class DocumentForm(forms.ModelForm):
     class Meta:

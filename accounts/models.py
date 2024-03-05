@@ -61,6 +61,7 @@ class Execution(models.Model):
     qos = models.CharField(max_length=255, null=False)
     name_workflow = models.CharField(max_length=255, null=False)
     checkpoint = models.IntegerField(null=False, default=0)
+    checkpointBool = models.BooleanField(default=False)
     wdir = models.CharField(max_length=500, null=False)
     workflow_path = models.CharField(max_length=500, null=False)
     autorestart = models.BooleanField(default=False)
@@ -70,6 +71,10 @@ class Execution(models.Model):
                                 to_field='id',
                                 null=True, blank=True)
     results_ftp_path = models.CharField(max_length=255, null=False)
+    branch=models.CharField(max_length=255, null=False, default="main")
+    g_bool = models.CharField(max_length=255, null=False, default="false")
+    d_bool = models.CharField(max_length=255, null=False, default="false")
+    t_bool = models.CharField(max_length=255, null=False, default="false")
 
 
 class Key_Gen(models.Model):

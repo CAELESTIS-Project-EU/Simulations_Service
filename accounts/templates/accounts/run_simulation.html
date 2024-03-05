@@ -52,9 +52,6 @@
                             </label>
                             <small class="form-text text-muted">Allows checkpointing</small>
                             <br>
-                            <br>
-
-
                             <label class="font-weight-bold">Auto restart for Checkpointing</label>
                             <br>
                             <label class="switch">
@@ -62,7 +59,19 @@
                                 <span class="slider round"></span>
                             </label>
                             <small class="form-text text-muted">Allows auto restarting from the checkpoint (If you activate this flat, also the previous flag will be considered active)</small>
-
+                            <br>
+                            <div class="form-check form-check-inline">
+                              <input class="form-check-input" type="checkbox" name="gSwitch" >
+                              <label class="form-check-label" for="inlineRadio1">Graph option</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                              <input class="form-check-input" type="checkbox" name="tSwitch" >
+                              <label class="form-check-label" for="inlineRadio2">Trace option</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                              <input class="form-check-input" type="checkbox" name="dSwitch"  >
+                              <label class="form-check-label" for="inlineRadio3">Debug option</label>
+                            </div>
                             <br>
                             <label class="form-label" for="customFile">Input file</label>
                             {% render_field form.document type="file" class="form-control" id="customFile" placeholder="Upload your workflow definition" %}

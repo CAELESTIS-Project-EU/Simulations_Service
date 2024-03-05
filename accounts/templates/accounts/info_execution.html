@@ -5,7 +5,7 @@
         <div class="card" style="border-radius: 15px;">
             <div class="card-body p-5">
                 <h2 class="text-center mb-5" style="text-decoration: underline;">
-                    <button type="button" class="btn btn-primary btn-xl" disabled>RESULT</button>
+                    <button type="button" class="btn btn-primary btn-xl" disabled>EXECUTION INFO</button>
                 </h2>
                 <div class="wrapper-create-work">
                     <script>
@@ -34,21 +34,22 @@
                         </thead>
                         <tbody>
                         <tr style="text-align: center">
-                            <td>{{ executionsDone.jobID }}</td>
-                            <td>{{ executionsDone.user }}</td>
-                            <td>{{ executionsDone.nodes }}</td>
-                            <td>{{ executionsDone.status }}</td>
-                            <td>{{ executionsDone.time }}</td>
-                            <td>{{ executionsDone.qos }}</td>
-                            <td>{{ executionsDone.checkpointBool }}</td>
-                            <td>{{ executionsDone.autorestart }}</td>
+                            <td>{{ executionInfo.jobID }}</td>
+                            <td>{{ executionInfo.user }}</td>
+                            <td>{{ executionInfo.nodes }}</td>
+                            <td>{{ executionInfo.status }}</td>
+                            <td>{{ executionInfo.time }}</td>
+                            <td>{{ executionInfo.qos }}</td>
+                            <td>{{ executionInfo.checkpointBool }}</td>
+                            <td>{{ executionInfo.autorestart }}</td>
                         </tr>
+
                         </tbody>
                     </table>
-                    <button class="btn btn-secondary" onclick="copyToClipboard('#p2')"> Click to copy the result's
-                        path
+                    <button class="btn btn-secondary" onclick="copyToClipboard('#p2')"> Click to copy the working directory
+                        path!
                     </button>
-                    <button id="p2" hidden> {{ executionsDone.wdir }}</button>
+                    <button id="p2" hidden> {{ executionInfo.wdir }}</button>
                 </div>
             </div>
         </div>
@@ -59,4 +60,3 @@
         </div>
     {% endif %}
 {% endblock %}
-

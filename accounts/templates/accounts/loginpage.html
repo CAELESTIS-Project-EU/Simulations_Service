@@ -22,7 +22,16 @@
                             {{ form.password1 }}
                         </div>
                     </div>
+                    <div class="row">
+                        <div class="col-sm">
+                        </div>
+                        <div class="col-sm">
+                            <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+                            <div class="g-recaptcha" data-sitekey="6LcX4YQpAAAAAGTp_Y60ts5IPd9hjHfeNh9tRb6z"></div>
+                        </div>
+                    </div>
                 </div>
+
                 {% if error %}
                     <div class="alert alert-danger" style="text-align: center" role="alert">
                         Login Failed: Your username or password is incorrect

@@ -1,4 +1,6 @@
 import logging
+import os
+
 from rest_framework.authtoken.models import Token
 from .models import Machine, Key_Gen
 from accounts.views import decrypt, get_name_fqdn
@@ -11,7 +13,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from .forms import DocumentForm
 from rest_framework.exceptions import APIException
-from accounts.views import start_exec, run_sim_async, deleteExecutionHTTP, get_status, stop_execution_api, restart_execution_api  # Assuming these are defined elsewhere
+from accounts.views import start_exec, run_sim_async, deleteExecutionHTTP, get_status, stop_execution_api, \
+    restart_execution_api  # Assuming these are defined elsewhere
 
 log = logging.getLogger(__name__)
 
@@ -34,7 +37,6 @@ class AuthenticationFailed(APIException):
     default_code = 'authentication_failed'
 
 
-
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
@@ -54,33 +56,37 @@ def run_simulation(request):
             name = str(file)
             nameE = f"{name.split('.')[0]}_{uniqueID}.{name.split('.')[1]}"
             name = nameE
-        document = form.save(commit=False)
-        document.document.name = name
-        document.save()
+        file_extension = os.path.splitext(name)[1]
+        if file_extension != ".yaml":
+            return Response(
+                {'message': 'This workflow is under development, it is still not supported!', 'execution_id': 0},
+                status=status.HTTP_202_ACCEPTED)
+        else:
+            document = form.save(commit=False)
+            document.document.name = name
+            document.save()
+            # Extract data from request.data instead of request.POST
+            numNodes = request.data.get('numNodes')
+            branch = request.data.get('branch')
+            name_sim = request.data.get('name_sim') or get_random_string(8)
+            qos = request.data.get('qos')
+            execTime = request.data.get('execTime')
+            checkpoint_flag = request.data.get("checkpoint_flag", False)
+            auto_restart = request.data.get("auto_restart", False)
 
-        # Extract data from request.data instead of request.POST
-        numNodes = request.data.get('numNodes')
-        branch = request.data.get('branch')
-        name_sim = request.data.get('name_sim') or get_random_string(8)
-        qos = request.data.get('qos')
-        execTime = request.data.get('execTime')
-        checkpoint_flag = request.data.get("checkpoint_flag", False)
-        auto_restart = request.data.get("auto_restart", False)
+            checkpoint_bool = checkpoint_flag == "on"
+            auto_restart_bool = auto_restart == "on"
+            if auto_restart_bool:
+                checkpoint_bool = True
 
-        checkpoint_bool = checkpoint_flag == "on"
-        auto_restart_bool = auto_restart == "on"
-        if auto_restart_bool:
-            checkpoint_bool = True
-
-        eID = start_exec(numNodes, name_sim, execTime, qos, name, request, auto_restart_bool)
-        log.info("eID")
-        log.info(eID)
-        run_simulation = run_sim_async(request, name, numNodes, name_sim, execTime, qos, checkpoint_bool,
-                                       auto_restart_bool, eID, branch)
-        run_simulation.start()
-        return Response({'message': 'Simulation started successfully! ', 'execution_id': eID},
-                        status=status.HTTP_202_ACCEPTED)
-
+            eID = start_exec(numNodes, name_sim, execTime, qos, name, request, auto_restart_bool)
+            log.info("eID")
+            log.info(eID)
+            run_simulation = run_sim_async(request, name, numNodes, name_sim, execTime, qos, checkpoint_bool,
+                                           auto_restart_bool, eID, branch)
+            run_simulation.start()
+            return Response({'message': 'Simulation started successfully! ', 'execution_id': eID},
+                            status=status.HTTP_202_ACCEPTED)
     else:
         # Return form errors if form is not valid
         return Response(form.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -121,6 +127,7 @@ def http_execution(request, eID):
     elif request.method == 'DELETE':
         return delete_execution_api(request, eID)
 
+
 def delete_execution_api(request, eID):
     try:
         connect_execution(request)
@@ -157,7 +164,6 @@ def get_status_execution(request, eID):
         return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-
 def execution(request, eID):
     try:
         connect_execution(request)
@@ -174,13 +180,15 @@ def execution(request, eID):
     elif statusExecution == "stop":
         try:
             stop_execution_api(eID, request)
-            return Response({'message': 'The execution '+str(eID)+' has been stopped!'}, status=status.HTTP_202_ACCEPTED)
+            return Response({'message': 'The execution ' + str(eID) + ' has been stopped!'},
+                            status=status.HTTP_202_ACCEPTED)
         except  ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
     elif statusExecution == "restart":
         try:
             restart_execution_api(eID, request)
-            return Response({'message': 'The execution ' + +str(eID) + ' has been restarted!'}, status=status.HTTP_202_ACCEPTED)
+            return Response({'message': 'The execution ' + +str(eID) + ' has been restarted!'},
+                            status=status.HTTP_202_ACCEPTED)
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 

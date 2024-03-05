@@ -17,6 +17,7 @@ urlpatterns = [
     path('create_workflow/', views.create_workflow, name="create_workflow"),
     path('executions/', views.executions, name="executions"),
     path('results/', views.results, name="results"),
+    path('info_execution/', views.info_execution, name="info_execution"),
     path('ssh_keys_result/', views.ssh_keys_result, name="ssh_keys_result"),
     path('ssh_keys_generation/', views.ssh_keys_generation, name="ssh_keys_generation"),
     path('machine_definition/', views.machine_definition, name="machine_definition"),
