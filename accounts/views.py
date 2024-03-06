@@ -582,8 +582,6 @@ class run_sim_async(threading.Thread):
             cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; " + get_variables_exported(
                 exported_variables) + "  mkdir -p " + execution_folder + "; cd " + path_install_dir + "/scripts/" + machine_folder + "/; source app.sh " + userMachine + " " + str(
                 self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir + " " + self.branch + " " + machine_found.dataDir + " " + self.gOPTION + " " + self.tOPTION + " " + self.dOPTION
-        log.info("COMMAND")
-        log.info(cmd2)
         stdin, stdout, stderr = ssh.exec_command(cmd2)
         stdout = stdout.readlines()
         stderr = stderr.readlines()
@@ -599,8 +597,6 @@ class run_sim_async(threading.Thread):
                     self.request.session['jobID'] = jobID
         self.request.session['execution_folder'] = execution_folder
         os.remove("documents/" + str(self.name))
-        if self.auto_restart_bool:
-            monitor_checkpoint(var, self.request, self.execTime, machine_found.id)
         return
 
 
@@ -634,7 +630,7 @@ def run_sim(request):
         if form.is_valid():
             branch = request.POST.get('branchChoice')
             bash_script_path = "/var/www/API_REST/documents/delete_old_files.sh"
-            # execute_bash_script(bash_script_path)
+            execute_bash_script(bash_script_path)
             for filename, file in request.FILES.items():
                 uniqueID = uuid.uuid4()
                 nameE = (str(file).split(".")[0]) + "_" + str(uniqueID) + "." + str(file).split(".")[1]
@@ -993,6 +989,7 @@ def executions(request):
 
             except:
                 return False
+
             request.session["content"] = content
             request.session['machine_chosen'] = machine_found.id
             c = Connection()
@@ -1000,6 +997,8 @@ def executions(request):
             c.status = "Active"
             c.save()
             request.session["idConn"] = c.idConn_id
+            threadUpdate = updateExecutions(request, c.idConn_id)
+            threadUpdate.start()
         checkConnBool = checkConnection(request)
         if not checkConnBool:
             machines_done = populate_executions_machines(request)
@@ -1008,8 +1007,6 @@ def executions(request):
             request.session["checkConn"] = "Required"
             return render(request, 'accounts/executions.html',
                           {'machines': machines_done, 'checkConn': "no"})
-        threadUpdate = updateExecutions(request)
-        threadUpdate.start()
         machine_connected = Machine.objects.get(id=request.session["machine_chosen"])
         executions = Execution.objects.all().filter(author=request.user, machine=machine_connected).filter(
             Q(status="PENDING") | Q(status="RUNNING") | Q(status="INITIALIZING"))
@@ -1105,21 +1102,26 @@ def populate_executions_machines(request):
 
 
 class updateExecutions(threading.Thread):
-    def __init__(self, request):
+    def __init__(self, request, connectionID):
         threading.Thread.__init__(self)
         self.request = request
         self.timeout = 120 * 60
+        self.connectionID=connectionID
 
     def run(self):
         timeout_start = time.time()
         while time.time() < timeout_start + self.timeout:
+            conn=Connection.objects.get(idConn_id=self.connectionID)
+            if conn.status=="Disconnect":
+                break
             boolException = update_table(self.request)
             if not boolException:
                 break
             time.sleep(10)
-        Connection.objects.filter(idConn_id=self.request.session["idConn"]).update(status="Disconnect")
+        Connection.objects.filter(idConn_id=self.connectionID).update(status="Disconnect")
         render_right(self.request)
         return
+
 
 
 def update_table(request):
@@ -1143,6 +1145,10 @@ def update_table(request):
             if not (str(values[4]) == "FAILED" and executionE.status == "INITIALIZING"):
                 Execution.objects.filter(jobID=executionE.jobID).update(status=values[4], time=values[3],
                                                                         nodes=int(values[2]))
+    executionTimeout = Execution.objects.all().filter(author=request.user, autorestart=True, status="TIMEOUT")
+    for executionT in executionTimeout:
+        executionT.status="CONTINUE"
+        checkpointing(executionT.jobID, request, executionT.machine_id)
     return True
 
 
@@ -1185,48 +1191,14 @@ def stopExecution(eIDstop, request):
                   {'form': form, 'executions': executions, 'executionsDone': executionsDone,
                    'executionsFailed': executionsFailed, 'executionsTimeout': executionTimeout})
 
-
-class auto_restart_thread(threading.Thread):
-    def __init__(self, jobID, request, time, machine_id):
-        threading.Thread.__init__(self)
-        self.jobID = jobID
-        self.request = request
-        self.time = time
-        self.machine_id = machine_id
-
-    def run(self):
-        time.sleep(int(self.time) * 60)
-        wait_timeout_new(self.jobID, self.request, self.machine_id)
-        return
-
-
-def wait_timeout_new(jobID, request, machine_id):
-    execution = Execution.objects.get(jobID=jobID)
-    if execution.status != "TIMEOUT":
-        time.sleep(15)
-        wait_timeout_new(jobID, request)
-    else:
-        checkpointing(jobID, request, machine_id)
-    return
-
-
-def monitor_checkpoint(jobID, request, execTime, machine):
-    auto_restart_obj = auto_restart_thread(jobID, request, execTime, machine)
-    auto_restart_obj.start()
-    return
-
-
 def checkpointing(jobIDCheckpoint, request, machine_id):
     ssh = connection(request.session['content'], machine_id)
     checkpointID = Execution.objects.all().get(author=request.user, jobID=jobIDCheckpoint)
-    machine_connected = Machine.objects.get(id=machine_id)
-    machine_folder = extract_substring(machine_connected.fqdn)
-    command = "source /etc/profile; cd " + machine_connected.installDir + "/scripts/" + machine_folder + "/; sh app-checkpoint.sh " + checkpointID.user + " " + checkpointID.name_workflow + " " + checkpointID.workflow_path + " " + checkpointID.wdir + " " + str(
-        checkpointID.nodes) + " " + str(
-        checkpointID.execution_time) + " " + checkpointID.qos + " " + machine_connected.installDir
+    command = "source /etc/profile; cd " + checkpointID.wdir + "; source checkpoint_script.sh;"
     stdin, stdout, stderr = ssh.exec_command(command)
     stdout = stdout.readlines()
     s = "Submitted batch job"
+    execTime=checkpointID.execution_time
     while (len(stdout) == 0):
         import time
         time.sleep(1)
@@ -1234,28 +1206,34 @@ def checkpointing(jobIDCheckpoint, request, machine_id):
         for line in stdout:
             if (s in line):
                 jobID = int(line.replace(s, ""))
-                request.session['jobID'] = jobID
                 form = Execution()
-                form.jobID = request.session['jobID']
+                form.jobID = jobID
+                form.eID = uuid.uuid4()
+                form.machine_id = checkpointID.machine_id
                 form.user = checkpointID.user
                 form.author = request.user
                 form.nodes = checkpointID.nodes
                 form.status = "PENDING"
-                form.checkpoint = jobIDCheckpoint
+                form.checkpoint = checkpointID.jobID
                 form.time = "00:00:00"
                 form.wdir = checkpointID.wdir
                 form.workflow_path = checkpointID.workflow_path
                 form.execution_time = int(checkpointID.execution_time)
-                time = int(checkpointID.execution_time)
+                execTime = int(checkpointID.execution_time)
                 form.name_workflow = checkpointID.name_workflow
                 form.qos = checkpointID.qos
                 form.name_sim = checkpointID.name_sim
                 form.autorestart = checkpointID.autorestart
+                form.checkpointBool = checkpointID.checkpointBool
+                form.d_bool = checkpointID.d_bool
+                form.t_bool = checkpointID.t_bool
+                form.g_bool = checkpointID.g_bool
+                form.branch = checkpointID.branch
                 form.save()
     checkpointID = Execution.objects.all().get(author=request.user, jobID=jobIDCheckpoint)
     checkpointID.status = "CONTINUE"
     checkpointID.save()
-    monitor_checkpoint(request.session['jobID'], request, time, machine_id)
+    #monitor_checkpoint(request.session['jobID'], request, execTime, machine_id)
     return
 
 
@@ -1263,32 +1241,27 @@ def checkpointing_noAutorestart(jobIDCheckpoint, request):
     ssh = connection(request.session['content'], request.session['machine_chosen'])
     checkpointID = Execution.objects.all().get(author=request.user, jobID=jobIDCheckpoint)
     machine_connected = Machine.objects.get(id=request.session['machine_chosen'])
-    machine_folder = extract_substring(machine_connected.fqdn)
-    path_install_dir = os.path.join(machine_connected.installDir, checkpointID.branch)
-    param_machine = remove_numbers(machine_connected.fqdn)
     command = "source /etc/profile; cd " + checkpointID.wdir + "; source checkpoint_script.sh;"
-    log.info("CHECKPOINT START")
-    log.info(command)
     stdin, stdout, stderr = ssh.exec_command(command)
     stdout = stdout.readlines()
     s = "Submitted batch job"
-    log.info("READ CHECKPOINT")
     while (len(stdout) == 0):
         import time
         time.sleep(1)
     if (len(stdout) > 1):
-        log.info(stdout)
         for line in stdout:
             if (s in line):
                 jobID = int(line.replace(s, ""))
                 request.session['jobID'] = jobID
                 form = Execution()
-                form.jobID = request.session['jobID']
+                form.jobID = jobID
+                form.eID= uuid.uuid4()
+                form.machine_id= checkpointID.machine_id
                 form.user = checkpointID.user
                 form.author = request.user
                 form.nodes = checkpointID.nodes
                 form.status = "PENDING"
-                form.checkpoint = jobIDCheckpoint
+                form.checkpoint = checkpointID.jobID
                 form.time = "00:00:00"
                 form.wdir = checkpointID.wdir
                 form.workflow_path = checkpointID.workflow_path

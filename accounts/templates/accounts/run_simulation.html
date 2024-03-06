@@ -47,7 +47,7 @@
                             <label class="font-weight-bold">Checkpointing</label>
                             <br>
                             <label class="switch">
-                                <input type="checkbox" name="checkpoint_flag">
+                                <input type="checkbox" name="checkpoint_flag" id="checkpointFlagCheckbox">
                                 <span class="slider round"></span>
                             </label>
                             <small class="form-text text-muted">Allows checkpointing</small>
@@ -55,7 +55,7 @@
                             <label class="font-weight-bold">Auto restart for Checkpointing</label>
                             <br>
                             <label class="switch">
-                                <input type="checkbox" name="auto_restart">
+                                <input type="checkbox" name="auto_restart" id="autoRestartCheckbox">
                                 <span class="slider round"></span>
                             </label>
                             <small class="form-text text-muted">Allows auto restarting from the checkpoint (If you activate this flat, also the previous flag will be considered active)</small>
@@ -76,7 +76,15 @@
                             <label class="form-label" for="customFile">Input file</label>
                             {% render_field form.document type="file" class="form-control" id="customFile" placeholder="Upload your workflow definition" %}
                             <small class="form-text text-muted">Upload your workflow's definition</small>
+                            <script>
+                                const autoRestartCheckbox = document.getElementById('autoRestartCheckbox');
+                                const checkpointFlagCheckbox = document.getElementById('checkpointFlagCheckbox');
 
+                                autoRestartCheckbox.addEventListener('change', function () {
+                                    checkpointFlagCheckbox.checked = this.checked;
+                                    checkpointFlagCheckbox.disabled = this.checked;
+                                });
+                            </script>
                         </div>
                         <br>
                         <button type="submit" class="btn btn-primary fa fa-play-circle" onclick="this.disabled=true,this.form.submit();"></button>
