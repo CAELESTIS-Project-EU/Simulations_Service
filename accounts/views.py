@@ -23,6 +23,7 @@ import requests
 import configuration as cfg
 from rest_framework.authtoken.models import Token
 from login_register_project import settings
+from accounts.utils import xml_to_yaml
 
 log = logging.getLogger(__name__)
 
@@ -530,12 +531,22 @@ class run_sim_async(threading.Thread):
         self.dOPTION = dOPTION
 
     def run(self):
+        extension = get_file_extension((self.name))
+        if extension == ".yaml":
+            workflow = read_and_write_yaml(self.name)
+        else:
+            workflow =xml_to_yaml.execution("documents/" + self.name)
+            log.info("BEFORE OPENING")
+            log.info(workflow.get("workflow_type"))
+        log.info("DESCRIPTION WORKFLOW")
+        log.info(workflow)
         machine_found = Machine.objects.get(id=self.request.session['machine_chosen'])
         fqdn = machine_found.fqdn
         machine_folder = extract_substring(fqdn)
-        workflow = read_and_write(self.name)
         userMachine = machine_found.user
         workflow_name = workflow.get("workflow_type")
+        log.info("workflow_name")
+        log.info(workflow_name)
         principal_folder = machine_found.wdir
         wdirPath, nameWdir = wdir_folder(principal_folder)
         cmd1 = "source /etc/profile;  mkdir -p " + principal_folder + "/" + nameWdir + "/workflows/; echo " + str(
@@ -543,7 +554,8 @@ class run_sim_async(threading.Thread):
             self.name) + "; cd " + principal_folder + "; BACKUPDIR=$(ls -td ./*/ | head -1); echo EXECUTION_FOLDER:$BACKUPDIR;"
         ssh = connection(self.request.session["content"], machine_found.id)
         stdin, stdout, stderr = ssh.exec_command(cmd1)
-
+        log.info("COMMAND 1")
+        log.info(cmd1)
         execution_folder = wdirPath + "/execution"
         workflow_folder = wdirPath + "/workflows"
 
@@ -1106,13 +1118,13 @@ class updateExecutions(threading.Thread):
         threading.Thread.__init__(self)
         self.request = request
         self.timeout = 120 * 60
-        self.connectionID=connectionID
+        self.connectionID = connectionID
 
     def run(self):
         timeout_start = time.time()
         while time.time() < timeout_start + self.timeout:
-            conn=Connection.objects.get(idConn_id=self.connectionID)
-            if conn.status=="Disconnect":
+            conn = Connection.objects.get(idConn_id=self.connectionID)
+            if conn.status == "Disconnect":
                 break
             boolException = update_table(self.request)
             if not boolException:
@@ -1121,7 +1133,6 @@ class updateExecutions(threading.Thread):
         Connection.objects.filter(idConn_id=self.connectionID).update(status="Disconnect")
         render_right(self.request)
         return
-
 
 
 def update_table(request):
@@ -1138,6 +1149,8 @@ def update_table(request):
             values = str(stdout).split()
 
             if str(values[4]) == "COMPLETED" and executionE.status != "COMPLETED":
+                Execution.objects.filter(jobID=executionE.jobID).update(status=values[4], time=values[3],
+                                                                        nodes=int(values[2]))
                 ftp_folder_path = executionE.results_ftp_path
                 results_path = "results"
                 local_folder_path = os.path.join(executionE.wdir, results_path)
@@ -1147,7 +1160,7 @@ def update_table(request):
                                                                         nodes=int(values[2]))
     executionTimeout = Execution.objects.all().filter(author=request.user, autorestart=True, status="TIMEOUT")
     for executionT in executionTimeout:
-        executionT.status="CONTINUE"
+        executionT.status = "CONTINUE"
         checkpointing(executionT.jobID, request, executionT.machine_id)
     return True
 
@@ -1191,6 +1204,7 @@ def stopExecution(eIDstop, request):
                   {'form': form, 'executions': executions, 'executionsDone': executionsDone,
                    'executionsFailed': executionsFailed, 'executionsTimeout': executionTimeout})
 
+
 def checkpointing(jobIDCheckpoint, request, machine_id):
     ssh = connection(request.session['content'], machine_id)
     checkpointID = Execution.objects.all().get(author=request.user, jobID=jobIDCheckpoint)
@@ -1198,7 +1212,7 @@ def checkpointing(jobIDCheckpoint, request, machine_id):
     stdin, stdout, stderr = ssh.exec_command(command)
     stdout = stdout.readlines()
     s = "Submitted batch job"
-    execTime=checkpointID.execution_time
+    execTime = checkpointID.execution_time
     while (len(stdout) == 0):
         import time
         time.sleep(1)
@@ -1233,7 +1247,7 @@ def checkpointing(jobIDCheckpoint, request, machine_id):
     checkpointID = Execution.objects.all().get(author=request.user, jobID=jobIDCheckpoint)
     checkpointID.status = "CONTINUE"
     checkpointID.save()
-    #monitor_checkpoint(request.session['jobID'], request, execTime, machine_id)
+    # monitor_checkpoint(request.session['jobID'], request, execTime, machine_id)
     return
 
 
@@ -1255,8 +1269,8 @@ def checkpointing_noAutorestart(jobIDCheckpoint, request):
                 request.session['jobID'] = jobID
                 form = Execution()
                 form.jobID = jobID
-                form.eID= uuid.uuid4()
-                form.machine_id= checkpointID.machine_id
+                form.eID = uuid.uuid4()
+                form.machine_id = checkpointID.machine_id
                 form.user = checkpointID.user
                 form.author = request.user
                 form.nodes = checkpointID.nodes
@@ -1332,7 +1346,7 @@ def create_workflow(request):
     return render(request, 'accounts/create_workflow.html', {'form': form})
 
 
-def read_and_write(name):
+def read_and_write_yaml(name):
     with open("documents/" + str(name)) as file:
         try:
             workflow = yaml.safe_load(file)
@@ -1347,6 +1361,11 @@ def ssh_keys_result(request):
         return render('accounts/dashboard')
     else:
         return render('accounts/dashboard')
+
+
+def get_file_extension(file_path):
+    _, extension = os.path.splitext(file_path)
+    return extension
 
 
 def ssh_keys_generation(request):  # method to generate the ssh keys of a specific machine
