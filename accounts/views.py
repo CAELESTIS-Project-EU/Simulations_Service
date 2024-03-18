@@ -535,18 +535,12 @@ class run_sim_async(threading.Thread):
         if extension == ".yaml":
             workflow = read_and_write_yaml(self.name)
         else:
-            workflow =xml_to_yaml.execution("documents/" + self.name)
-            log.info("BEFORE OPENING")
-            log.info(workflow.get("workflow_type"))
-        log.info("DESCRIPTION WORKFLOW")
-        log.info(workflow)
+            workflow = xml_to_yaml.execution("documents/" + self.name)
         machine_found = Machine.objects.get(id=self.request.session['machine_chosen'])
         fqdn = machine_found.fqdn
         machine_folder = extract_substring(fqdn)
         userMachine = machine_found.user
         workflow_name = workflow.get("workflow_type")
-        log.info("workflow_name")
-        log.info(workflow_name)
         principal_folder = machine_found.wdir
         wdirPath, nameWdir = wdir_folder(principal_folder)
         cmd1 = "source /etc/profile;  mkdir -p " + principal_folder + "/" + nameWdir + "/workflows/; echo " + str(
@@ -554,8 +548,6 @@ class run_sim_async(threading.Thread):
             self.name) + "; cd " + principal_folder + "; BACKUPDIR=$(ls -td ./*/ | head -1); echo EXECUTION_FOLDER:$BACKUPDIR;"
         ssh = connection(self.request.session["content"], machine_found.id)
         stdin, stdout, stderr = ssh.exec_command(cmd1)
-        log.info("COMMAND 1")
-        log.info(cmd1)
         execution_folder = wdirPath + "/execution"
         workflow_folder = wdirPath + "/workflows"
 
@@ -609,6 +601,7 @@ class run_sim_async(threading.Thread):
                     self.request.session['jobID'] = jobID
         self.request.session['execution_folder'] = execution_folder
         os.remove("documents/" + str(self.name))
+
         return
 
 
@@ -969,6 +962,7 @@ def executions(request):
             return redirect('accounts:run_sim')
 
         elif 'disconnectButton' in request.POST:
+            global dict_thread
             Connection.objects.filter(idConn_id=request.session["idConn"]).update(status="Disconnect")
             for key in list(request.session.keys()):
                 if not key.startswith("_"):  # skip keys set by the django system
@@ -1011,6 +1005,7 @@ def executions(request):
             request.session["idConn"] = c.idConn_id
             threadUpdate = updateExecutions(request, c.idConn_id)
             threadUpdate.start()
+            monitor_checkpoint(request.user, content, c.idConn_id)
         checkConnBool = checkConnection(request)
         if not checkConnBool:
             machines_done = populate_executions_machines(request)
@@ -1134,6 +1129,54 @@ class updateExecutions(threading.Thread):
         render_right(self.request)
         return
 
+dict_thread={}
+
+class auto_restart_thread(threading.Thread):
+    def __init__(self, user,content, conn_id):
+        threading.Thread.__init__(self)
+        super().__init__()
+        self.user = user
+        self.content=content
+        self.conn_id=conn_id
+        self._stop_event = threading.Event()
+
+    def run(self):
+        global dict_thread
+        if self.user not in dict_thread:
+            dict_thread[self.user]=self
+            wait_timeout_new(self.user, self.content, self.conn_id, self._stop_event)
+        return
+
+    def stop(self):
+        self._stop_event.set()  # Set the event to stop the thread
+
+
+def wait_timeout_new(user, content, conn_id,  stop_event):
+    global dict_thread
+    while not stop_event.is_set():
+        executions = Execution.objects.all().filter(author=user, autorestart=True).filter(
+            Q(status="PENDING") | Q(status="RUNNING") | Q(status="INITIALIZING") | Q(status="TIMEOUT"))
+        conn = Connection.objects.get(idConn_id=conn_id)
+        if not executions and conn.status == "Disconnect":
+            dict_thread.pop(user)
+            stop_event.wait(timeout=5)
+            break  # Exit the loop and terminate the thread
+        else:
+            executionTimeout = Execution.objects.all().filter(author=user, autorestart=True, status="TIMEOUT")
+            if executionTimeout:
+                for executionT in executionTimeout:
+                    checkpointing(executionT.jobID, content, user, executionT.machine_id)
+                    executionT.status = "CONTINUE"
+            time.sleep(5)
+    stop_event.wait(timeout=5)
+    return
+
+
+def monitor_checkpoint(user, content, conn_id):
+    auto_restart_obj = auto_restart_thread(user ,content, conn_id)
+    auto_restart_obj.start()
+    return
+
 
 def update_table(request):
     machine_found = Machine.objects.get(id=request.session['machine_chosen'])
@@ -1158,10 +1201,6 @@ def update_table(request):
             if not (str(values[4]) == "FAILED" and executionE.status == "INITIALIZING"):
                 Execution.objects.filter(jobID=executionE.jobID).update(status=values[4], time=values[3],
                                                                         nodes=int(values[2]))
-    executionTimeout = Execution.objects.all().filter(author=request.user, autorestart=True, status="TIMEOUT")
-    for executionT in executionTimeout:
-        executionT.status = "CONTINUE"
-        checkpointing(executionT.jobID, request, executionT.machine_id)
     return True
 
 
@@ -1205,9 +1244,9 @@ def stopExecution(eIDstop, request):
                    'executionsFailed': executionsFailed, 'executionsTimeout': executionTimeout})
 
 
-def checkpointing(jobIDCheckpoint, request, machine_id):
-    ssh = connection(request.session['content'], machine_id)
-    checkpointID = Execution.objects.all().get(author=request.user, jobID=jobIDCheckpoint)
+def checkpointing(jobIDCheckpoint, content, user, machine_id):
+    ssh = connection(content, machine_id)
+    checkpointID = Execution.objects.all().get(author=user, jobID=jobIDCheckpoint)
     command = "source /etc/profile; cd " + checkpointID.wdir + "; source checkpoint_script.sh;"
     stdin, stdout, stderr = ssh.exec_command(command)
     stdout = stdout.readlines()
@@ -1225,7 +1264,7 @@ def checkpointing(jobIDCheckpoint, request, machine_id):
                 form.eID = uuid.uuid4()
                 form.machine_id = checkpointID.machine_id
                 form.user = checkpointID.user
-                form.author = request.user
+                form.author = user
                 form.nodes = checkpointID.nodes
                 form.status = "PENDING"
                 form.checkpoint = checkpointID.jobID
@@ -1244,7 +1283,7 @@ def checkpointing(jobIDCheckpoint, request, machine_id):
                 form.g_bool = checkpointID.g_bool
                 form.branch = checkpointID.branch
                 form.save()
-    checkpointID = Execution.objects.all().get(author=request.user, jobID=jobIDCheckpoint)
+    checkpointID = Execution.objects.all().get(author=user, jobID=jobIDCheckpoint)
     checkpointID.status = "CONTINUE"
     checkpointID.save()
     # monitor_checkpoint(request.session['jobID'], request, execTime, machine_id)

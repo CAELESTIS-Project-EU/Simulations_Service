@@ -57,7 +57,7 @@ def run_simulation(request):
             nameE = f"{name.split('.')[0]}_{uniqueID}.{name.split('.')[1]}"
             name = nameE
         file_extension = os.path.splitext(name)[1]
-        if file_extension != ".yaml":
+        if file_extension != ".yaml" and  file_extension !=".xml" :
             return Response(
                 {'message': 'This workflow is under development, it is still not supported!', 'execution_id': 0},
                 status=status.HTTP_202_ACCEPTED)
@@ -74,16 +74,29 @@ def run_simulation(request):
             checkpoint_flag = request.data.get("checkpoint_flag", False)
             auto_restart = request.data.get("auto_restart", False)
 
-            checkpoint_bool = checkpoint_flag == "on"
-            auto_restart_bool = auto_restart == "on"
-            if auto_restart_bool:
-                checkpoint_bool = True
+            g_flag = request.data.get("gSwitch", False)
+            d_flag = request.data.get("dSwitch", False)
+            t_flag = request.data.get("tSwitch", False)
 
-            eID = start_exec(numNodes, name_sim, execTime, qos, name, request, auto_restart_bool)
-            log.info("eID")
-            log.info(eID)
+            checkpoint_bool = False
+            if checkpoint_flag == "on":
+                checkpoint_bool = True
+            auto_restart_bool = False
+            if auto_restart == "on":
+                auto_restart_bool = True
+            g_bool = "false"
+            if g_flag == "on":
+                g_bool = "true"
+            t_bool = "false"
+            if t_flag == "on":
+                t_bool = "true"
+            d_bool = "false"
+            if d_flag == "on":
+                d_bool = "true"
+            eID = start_exec(numNodes, name_sim, execTime, qos, name, request, auto_restart_bool, checkpoint_bool,
+                             d_bool, t_bool, g_bool, branch)
             run_simulation = run_sim_async(request, name, numNodes, name_sim, execTime, qos, checkpoint_bool,
-                                           auto_restart_bool, eID, branch)
+                                    auto_restart_bool, eID, branch, g_bool, t_bool, d_bool)
             run_simulation.start()
             return Response({'message': 'Simulation started successfully! ', 'execution_id': eID},
                             status=status.HTTP_202_ACCEPTED)
