@@ -24,6 +24,7 @@ import configuration as cfg
 from rest_framework.authtoken.models import Token
 from login_register_project import settings
 from accounts.utils import xml_to_yaml
+import shlex
 
 log = logging.getLogger(__name__)
 
@@ -161,6 +162,10 @@ def scp_upload_code_folder(local_path, remote_path, content, machineID, branch):
     if res or emptyDir:
         # Recursively upload the local folder and its contents
         for root, dirs, files in os.walk(local_path + "/" + branch):
+            if '.git' in dirs:
+                dirs.remove('.git')
+            if '.idea' in dirs:
+                dirs.remove('.git')
             # Calculate the relative path from local_path to root
             relative_root = os.path.relpath(root, local_path + "/" + branch)
             # Skip the creation of the root directory itself
@@ -531,10 +536,11 @@ class run_sim_async(threading.Thread):
         self.dOPTION = dOPTION
 
     def run(self):
+        log.info("HERE 1")
         extension = get_file_extension((self.name))
         if extension == ".yaml":
             workflow = read_and_write_yaml(self.name)
-        else:
+        elif extension == ".aml" or extension == ".xml":
             workflow = xml_to_yaml.execution("documents/" + self.name)
         machine_found = Machine.objects.get(id=self.request.session['machine_chosen'])
         fqdn = machine_found.fqdn
@@ -543,11 +549,14 @@ class run_sim_async(threading.Thread):
         workflow_name = workflow.get("workflow_type")
         principal_folder = machine_found.wdir
         wdirPath, nameWdir = wdir_folder(principal_folder)
-        cmd1 = "source /etc/profile;  mkdir -p " + principal_folder + "/" + nameWdir + "/workflows/; echo " + str(
-            workflow) + " > " + principal_folder + "/" + nameWdir + "/workflows/" + str(
+        log.info("HERE 2")
+        cmd1 = "source /etc/profile;  mkdir -p " + principal_folder + "/" + nameWdir + "/workflows/; echo " + shlex.quote(
+            str(workflow)) + " > " + principal_folder + "/" + nameWdir + "/workflows/" + str(
             self.name) + "; cd " + principal_folder + "; BACKUPDIR=$(ls -td ./*/ | head -1); echo EXECUTION_FOLDER:$BACKUPDIR;"
+        log.info(f"cmd1 : {cmd1}")
         ssh = connection(self.request.session["content"], machine_found.id)
         stdin, stdout, stderr = ssh.exec_command(cmd1)
+        log.info("COMMAND 1 DONE")
         execution_folder = wdirPath + "/execution"
         workflow_folder = wdirPath + "/workflows"
 
@@ -566,7 +575,6 @@ class run_sim_async(threading.Thread):
         except:
             pass
         self.request.session['workflow_path'] = workflow_folder
-
         path_install_dir = os.path.join(machine_found.installDir, self.branch)
         param_machine = remove_numbers(machine_found.fqdn)
         local_folder = "/home/ubuntu/installDir"
@@ -574,19 +582,22 @@ class run_sim_async(threading.Thread):
                                self.branch)
         download_input(workflow, self.request, machine_found.id)
         exported_variables = set_environment_variables(workflow)
+        log.info("HERE 3")
         if self.checkpoint_bool:
             cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; " + get_variables_exported(
-                exported_variables) + " mkdir -p " + execution_folder + "; cd " + path_install_dir + "/scripts/" + machine_folder + "/;  source app-checkpoint.sh " + userMachine + " " + str(
+                exported_variables) + " mkdir -p " + execution_folder + "; cd " + path_install_dir + "/scripts/" + param_machine + "/;  source app-checkpoint.sh " + userMachine + " " + str(
                 self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir + " " + self.branch + " " + machine_found.dataDir + " " + self.gOPTION + " " + self.tOPTION + " " + self.dOPTION + ";"
             cmd_writeFile_checkpoint = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; " + get_variables_exported(
-                exported_variables) + " cd " + path_install_dir + "/scripts/" + machine_folder + "/;  source app-checkpoint.sh " + userMachine + " " + str(
+                exported_variables) + " cd " + path_install_dir + "/scripts/" + param_machine + "/;  source app-checkpoint.sh " + userMachine + " " + str(
                 self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir + " " + self.branch + " " + machine_found.dataDir + " " + self.gOPTION + " " + self.tOPTION + " " + self.dOPTION + ";"
             cmd2 += write_checkpoint_file(execution_folder, cmd_writeFile_checkpoint)
         else:
             cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; " + get_variables_exported(
-                exported_variables) + "  mkdir -p " + execution_folder + "; cd " + path_install_dir + "/scripts/" + machine_folder + "/; source app.sh " + userMachine + " " + str(
+                exported_variables) + "  mkdir -p " + execution_folder + "; cd " + path_install_dir + "/scripts/" + param_machine + "/; source app.sh " + userMachine + " " + str(
                 self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir + " " + self.branch + " " + machine_found.dataDir + " " + self.gOPTION + " " + self.tOPTION + " " + self.dOPTION
+        log.info(f"run_sim : {cmd2} ")
         stdin, stdout, stderr = ssh.exec_command(cmd2)
+        log.info("COMMAND 2 DONE")
         stdout = stdout.readlines()
         stderr = stderr.readlines()
         s = "Submitted batch job"
@@ -634,7 +645,7 @@ def run_sim(request):
         form = DocumentForm(request.POST, request.FILES)
         if form.is_valid():
             branch = request.POST.get('branchChoice')
-            bash_script_path = "/var/www/API_REST/documents/delete_old_files.sh"
+            bash_script_path = "/var/www/API_REST/delete_old_files.sh"
             execute_bash_script(bash_script_path)
             for filename, file in request.FILES.items():
                 uniqueID = uuid.uuid4()
@@ -759,25 +770,39 @@ def delete_parent_folder(path, ssh):
 
 
 def deleteExecution(eIDdelete, request):
-    ssh = connection(request.session['content'], request.session['machine_chosen'])
-    exec = Execution.objects.filter(eID=eIDdelete).get()
-    delete_parent_folder(exec.wdir, ssh)
-    if exec.eID != 0:
-        command = "scancel " + str(exec.jobID)
-        stdin, stdout, stderr = ssh.exec_command(command)
-    Execution.objects.filter(eID=eIDdelete).delete()
-    form = ExecutionForm()
-    executions = Execution.objects.all().filter(author=request.user).filter(
-        Q(status="PENDING") | Q(status="RUNNING") | Q(status="INITIALIZING"))
-    executionsDone = Execution.objects.all().filter(author=request.user, status="COMPLETED")
-    executionsFailed = Execution.objects.all().filter(author=request.user, status="FAILED")
-    executionTimeout = Execution.objects.all().filter(author=request.user, status="TIMEOUT", autorestart=False,
-                                                      checkpointBool=True)
-    return render(request, 'accounts/executions.html',
-                  {'form': form, 'executions': executions, 'executionsDone': executionsDone,
-                   'executionsFailed': executionsFailed, 'executionsTimeout': executionTimeout})
-
-
+    log.info(f"eIDdelete {eIDdelete}")
+    try:
+        log.info(f"ssh 1 {request.session['machine_chosen']}")
+        ssh = connection(request.session['content'], request.session['machine_chosen'])
+        log.info(f"ssh 2 ssh: {ssh}")
+        exec = Execution.objects.filter(eID=eIDdelete).get()
+        delete_parent_folder(exec.wdir, ssh)
+        if exec.eID != 0:
+            command = "scancel " + str(exec.jobID)
+            stdin, stdout, stderr = ssh.exec_command(command)
+        Execution.objects.filter(eID=eIDdelete).delete()
+        form = ExecutionForm()
+        executions = Execution.objects.all().filter(author=request.user).filter(
+            Q(status="PENDING") | Q(status="RUNNING") | Q(status="INITIALIZING"))
+        executionsDone = Execution.objects.all().filter(author=request.user, status="COMPLETED")
+        executionsFailed = Execution.objects.all().filter(author=request.user, status="FAILED")
+        executionTimeout = Execution.objects.all().filter(author=request.user, status="TIMEOUT", autorestart=False,
+                                                          checkpointBool=True)
+        return render(request, 'accounts/executions.html',
+                      {'form': form, 'executions': executions, 'executionsDone': executionsDone,
+                       'executionsFailed': executionsFailed, 'executionsTimeout': executionTimeout})
+    except:
+        Execution.objects.filter(eID=eIDdelete).delete()
+        form = ExecutionForm()
+        executions = Execution.objects.all().filter(author=request.user).filter(
+            Q(status="PENDING") | Q(status="RUNNING") | Q(status="INITIALIZING"))
+        executionsDone = Execution.objects.all().filter(author=request.user, status="COMPLETED")
+        executionsFailed = Execution.objects.all().filter(author=request.user, status="FAILED")
+        executionTimeout = Execution.objects.all().filter(author=request.user, status="TIMEOUT", autorestart=False,
+                                                          checkpointBool=True)
+        return render(request, 'accounts/executions.html',
+                      {'form': form, 'executions': executions, 'executionsDone': executionsDone,
+                       'executionsFailed': executionsFailed, 'executionsTimeout': executionTimeout})
 def deleteExecutionHTTP(eIDdelete, request):
     ssh = connection(request.session['content'], request.session['machine_chosen'])
     try:
@@ -1211,9 +1236,19 @@ def connection(content, machineID):
         machine_found = Machine.objects.get(id=machineID)
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh.connect(machine_found.fqdn, username=machine_found.user, pkey=pkey)
-    except:
-        return redirect('accounts:executions', {"errorToken": 'yes'})
-    return ssh
+        log.info(f"CONNECTION DONE {machine_found.user}@{machine_found.fqdn}")
+        return ssh
+    except paramiko.AuthenticationException as auth_error:
+        log.info(f"Authentication error: {auth_error}")
+    except paramiko.BadHostKeyException as host_key_error:
+        log.info(f"Bad host key error: {host_key_error}")
+    except paramiko.SSHException as ssh_error:
+        log.info(f"SSH error: {ssh_error}")
+    except Machine.DoesNotExist as not_found_error:
+        log.info(f"Machine not found error: {not_found_error}")
+    except Exception as e:
+        log.info(f"An unexpected error occurred: {e}")
+        return redirect('accounts:executions')
 
 
 def checkpointingFinished(execution, request):
@@ -1635,6 +1670,7 @@ def dashboard(request):
     return render(request, 'accounts/dashboard.html')
 
 
+
 def remove_numbers(input_str):
     # Split the input string by '.' to separate the hostname and domain
     parts = input_str.split('.')
@@ -1642,7 +1678,10 @@ def remove_numbers(input_str):
     if len(parts) >= 2:
         # Take the first part as the hostname
         hostname = parts[0]
-
+        log.info(f"param machine : {input_str}")
+        if input_str.startswith("glogin"):
+            log.info(f"param machine result : mn5")
+            return "mn5"
         # Remove any trailing digits from the hostname
         while hostname and hostname[-1].isdigit():
             hostname = hostname[:-1]

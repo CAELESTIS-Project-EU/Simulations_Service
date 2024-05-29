@@ -57,7 +57,7 @@ def run_simulation(request):
             nameE = f"{name.split('.')[0]}_{uniqueID}.{name.split('.')[1]}"
             name = nameE
         file_extension = os.path.splitext(name)[1]
-        if file_extension != ".yaml" and  file_extension !=".xml" :
+        if file_extension != ".yaml" and  file_extension !=".xml" and file_extension!=".aml":
             return Response(
                 {'message': 'This workflow is under development, it is still not supported!', 'execution_id': 0},
                 status=status.HTTP_202_ACCEPTED)
