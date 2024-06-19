@@ -159,30 +159,47 @@ def scp_upload_code_folder(local_path, remote_path, content, machineID, branch):
                 log.error("FileNotFoundError " + str(current_dir))
                 sftp.mkdir(current_dir)
                 emptyDir = True
+    log.info(f"res: {res}")
+    log.info(f"emptyDir: {emptyDir}")
     if res or emptyDir:
         # Recursively upload the local folder and its contents
         for root, dirs, files in os.walk(local_path + "/" + branch):
+            log.info(f"Current directory: {root}")  # Debug: Print current directory
+            log.info(f"Directories before removal: {dirs}")  # Debug: Print directories before removal
             if '.git' in dirs:
                 dirs.remove('.git')
+                log.info(f"Removed .git from {root}")  # Debug: Confirm .git removal
+
             if '.idea' in dirs:
-                dirs.remove('.git')
+                dirs.remove('.idea')
+                log.info(f"Removed .idea from {root}")  # Debug: Confirm .idea removal
+
+            log.info(f"Directories after removal: {dirs}")
+
             # Calculate the relative path from local_path to root
             relative_root = os.path.relpath(root, local_path + "/" + branch)
-            # Skip the creation of the root directory itself
+
+            # Determine the remote directory
             if relative_root == '.':
                 remote_dir = remote_path
             else:
                 remote_dir = os.path.join(remote_path, relative_root)
-                try:
-                    sftp.stat(remote_dir)
-                except FileNotFoundError:
-                    log.error("FileNotFoundError " + str(remote_dir))
-                    sftp.mkdir(remote_dir)
+
+            # Ensure the remote directory exists
+            try:
+                sftp.stat(remote_dir)
+            except FileNotFoundError:
+                log.error(f"FileNotFoundError: {remote_dir} does not exist. Creating it.")
+                sftp.mkdir(remote_dir)
 
             for file in files:
                 local_file = os.path.join(root, file)
                 remote_file = os.path.join(remote_dir, file)
-                sftp.put(local_file, remote_file)
+                try:
+                    sftp.put(local_file, remote_file)
+                    log.info(f"Uploaded {local_file} to {remote_file}")
+                except Exception as e:
+                    log.error(f"Failed to upload {local_file} to {remote_file}: {e}")
 
     sftp.close()
     return
@@ -1149,7 +1166,7 @@ class updateExecutions(threading.Thread):
             boolException = update_table(self.request)
             if not boolException:
                 break
-            time.sleep(10)
+            time.sleep(5)
         Connection.objects.filter(idConn_id=self.connectionID).update(status="Disconnect")
         render_right(self.request)
         return
