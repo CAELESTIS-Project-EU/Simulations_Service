@@ -75,6 +75,7 @@ class Execution(models.Model):
     g_bool = models.CharField(max_length=255, null=False, default="false")
     d_bool = models.CharField(max_length=255, null=False, default="false")
     t_bool = models.CharField(max_length=255, null=False, default="false")
+    project_name = models.CharField(max_length=255, null=False, default="bsc19")
 
 
 class Key_Gen(models.Model):

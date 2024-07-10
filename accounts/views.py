@@ -28,11 +28,11 @@ import shlex
 
 log = logging.getLogger(__name__)
 
-
+# Encrypt a message using a key
 def encrypt(message: bytes, key: bytes) -> bytes:
     return Fernet(key).encrypt(message)
 
-
+# Decrypt a token using a key
 def decrypt(token: bytes, key: bytes) -> bytes:
     try:
         res = Fernet(key).decrypt(token)
@@ -41,7 +41,7 @@ def decrypt(token: bytes, key: bytes) -> bytes:
         raise
     return res
 
-
+# Get the client's IP address from the request
 def get_client_ip(request):
     x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
     if x_forwarded_for:
@@ -51,6 +51,8 @@ def get_client_ip(request):
     return ip
 
 
+
+# Validate reCAPTCHA response
 def is_recaptcha_valid(request):
     try:
         response = requests.post(
@@ -70,6 +72,7 @@ def is_recaptcha_valid(request):
         return False
 
 
+# Handle login page view
 def loginPage(request):
     if request.method == 'POST':
         username = request.POST['username']
@@ -90,6 +93,7 @@ def loginPage(request):
     return render(request, 'accounts/loginpage.html', {'form': form})
 
 
+# Handle registration page view
 def registerPage(request):
     if request.method == 'POST':
         form = CreateUserForm(request.POST)
@@ -108,6 +112,7 @@ def registerPage(request):
     return render(request, 'accounts/registerpage.html', {'form': form})
 
 
+# Handle user logout
 @login_required
 def logoutUser(request):
     logout(request)
@@ -115,12 +120,14 @@ def logoutUser(request):
     return redirect("accounts:home")
 
 
+# Generate a random string of specified length
 def get_random_string(length):
     # With combination of lower and upper case
     result_str = ''.join(random.choice(string.ascii_letters) for i in range(length))
     return result_str
 
 
+# Check connection status
 def checkConnection(request):
     idConn = request.session.get('idConn')
     if idConn != None:
@@ -130,6 +137,7 @@ def checkConnection(request):
     return True
 
 
+# Extract a substring based on a regex pattern
 def extract_substring(s):
     match = re.search(r'([a-zA-Z]+)\d\.', s)
     if match:
@@ -159,22 +167,14 @@ def scp_upload_code_folder(local_path, remote_path, content, machineID, branch):
                 log.error("FileNotFoundError " + str(current_dir))
                 sftp.mkdir(current_dir)
                 emptyDir = True
-    log.info(f"res: {res}")
-    log.info(f"emptyDir: {emptyDir}")
     if res or emptyDir:
         # Recursively upload the local folder and its contents
         for root, dirs, files in os.walk(local_path + "/" + branch):
-            log.info(f"Current directory: {root}")  # Debug: Print current directory
-            log.info(f"Directories before removal: {dirs}")  # Debug: Print directories before removal
             if '.git' in dirs:
                 dirs.remove('.git')
-                log.info(f"Removed .git from {root}")  # Debug: Confirm .git removal
 
             if '.idea' in dirs:
                 dirs.remove('.idea')
-                log.info(f"Removed .idea from {root}")  # Debug: Confirm .idea removal
-
-            log.info(f"Directories after removal: {dirs}")
 
             # Calculate the relative path from local_path to root
             relative_root = os.path.relpath(root, local_path + "/" + branch)
@@ -197,14 +197,13 @@ def scp_upload_code_folder(local_path, remote_path, content, machineID, branch):
                 remote_file = os.path.join(remote_dir, file)
                 try:
                     sftp.put(local_file, remote_file)
-                    log.info(f"Uploaded {local_file} to {remote_file}")
                 except Exception as e:
                     log.error(f"Failed to upload {local_file} to {remote_file}: {e}")
 
     sftp.close()
     return
 
-
+#cjheck if the path is a file or a folder
 def is_file_or_folder(path):
     if '.' in os.path.basename(path) and not path.endswith('.'):
         return False
@@ -533,10 +532,10 @@ def write_checkpoint_file(execution_folder, cmd2):
     cmd = f'echo "{cmd2}" > {script_path} && chmod +x {script_path}'
     return cmd
 
-
+#class to run jobs in an asyncronus way
 class run_sim_async(threading.Thread):
     def __init__(self, request, name, numNodes, name_sim, execTime, qos, checkpoint_bool, auto_restart_bool, eID,
-                 branch, gOPTION, tOPTION, dOPTION):
+                 branch, gOPTION, tOPTION, dOPTION, project_name):
         threading.Thread.__init__(self)
         self.request = request
         self.name = name
@@ -551,29 +550,31 @@ class run_sim_async(threading.Thread):
         self.gOPTION = gOPTION
         self.tOPTION = tOPTION
         self.dOPTION = dOPTION
+        self.project_name= project_name
 
     def run(self):
-        log.info("HERE 1")
         extension = get_file_extension((self.name))
-        if extension == ".yaml":
+        if extension == ".yaml":    #for most of the workflow we use yaml files
             workflow = read_and_write_yaml(self.name)
-        elif extension == ".aml" or extension == ".xml":
+        elif extension == ".aml" or extension == ".xml":  #for the AUTOMATION ML workflow
+            log.info("ENTER HERE AML or XML")
             workflow = xml_to_yaml.execution("documents/" + self.name)
+            log.info(f"workflow: {workflow}")
         machine_found = Machine.objects.get(id=self.request.session['machine_chosen'])
         fqdn = machine_found.fqdn
         machine_folder = extract_substring(fqdn)
         userMachine = machine_found.user
         workflow_name = workflow.get("workflow_type")
-        principal_folder = machine_found.wdir
+        principal_folder = machine_found.wdir #folder specified as workind dir in the online service
         wdirPath, nameWdir = wdir_folder(principal_folder)
-        log.info("HERE 2")
+        #command to create all the folders and copy the yaml file passed through the service
         cmd1 = "source /etc/profile;  mkdir -p " + principal_folder + "/" + nameWdir + "/workflows/; echo " + shlex.quote(
             str(workflow)) + " > " + principal_folder + "/" + nameWdir + "/workflows/" + str(
             self.name) + "; cd " + principal_folder + "; BACKUPDIR=$(ls -td ./*/ | head -1); echo EXECUTION_FOLDER:$BACKUPDIR;"
         log.info(f"cmd1 : {cmd1}")
         ssh = connection(self.request.session["content"], machine_found.id)
+
         stdin, stdout, stderr = ssh.exec_command(cmd1)
-        log.info("COMMAND 1 DONE")
         execution_folder = wdirPath + "/execution"
         workflow_folder = wdirPath + "/workflows"
 
@@ -599,22 +600,20 @@ class run_sim_async(threading.Thread):
                                self.branch)
         download_input(workflow, self.request, machine_found.id)
         exported_variables = set_environment_variables(workflow)
-        log.info("HERE 3")
         if self.checkpoint_bool:
             cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; " + get_variables_exported(
                 exported_variables) + " mkdir -p " + execution_folder + "; cd " + path_install_dir + "/scripts/" + param_machine + "/;  source app-checkpoint.sh " + userMachine + " " + str(
-                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir + " " + self.branch + " " + machine_found.dataDir + " " + self.gOPTION + " " + self.tOPTION + " " + self.dOPTION + ";"
+                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir + " " + self.branch + " " + machine_found.dataDir + " " + self.gOPTION + " " + self.tOPTION + " " + self.dOPTION + " " + self.project_name+  ";"
             cmd_writeFile_checkpoint = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; " + get_variables_exported(
                 exported_variables) + " cd " + path_install_dir + "/scripts/" + param_machine + "/;  source app-checkpoint.sh " + userMachine + " " + str(
-                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir + " " + self.branch + " " + machine_found.dataDir + " " + self.gOPTION + " " + self.tOPTION + " " + self.dOPTION + ";"
+                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir + " " + self.branch + " " + machine_found.dataDir + " " + self.gOPTION + " " + self.tOPTION + " " + self.dOPTION + " " + self.project_name+ ";"
             cmd2 += write_checkpoint_file(execution_folder, cmd_writeFile_checkpoint)
         else:
             cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; " + get_variables_exported(
                 exported_variables) + "  mkdir -p " + execution_folder + "; cd " + path_install_dir + "/scripts/" + param_machine + "/; source app.sh " + userMachine + " " + str(
-                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir + " " + self.branch + " " + machine_found.dataDir + " " + self.gOPTION + " " + self.tOPTION + " " + self.dOPTION
+                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir + " " + self.branch + " " + machine_found.dataDir + " " + self.gOPTION + " " + self.tOPTION + " " + self.dOPTION + " " + self.project_name+  ";"
         log.info(f"run_sim : {cmd2} ")
         stdin, stdout, stderr = ssh.exec_command(cmd2)
-        log.info("COMMAND 2 DONE")
         stdout = stdout.readlines()
         stderr = stderr.readlines()
         s = "Submitted batch job"
@@ -690,20 +689,20 @@ def run_sim(request):
                 auto_restart_bool = True
             if auto_restart_bool:
                 checkpoint_bool = True
-            g_bool = "false"
+            g_bool = "false"  #graph option
             if g_flag == "on":
                 g_bool = "true"
-            t_bool = "false"
+            t_bool = "false" #trace option
             if t_flag == "on":
                 t_bool = "true"
-            d_bool = "false"
+            d_bool = "false" #debug option
             if d_flag == "on":
                 d_bool = "true"
-
+            project_name = request.POST.get('project_name')
             eID = start_exec(numNodes, name_sim, execTime, qos, name, request, auto_restart_bool, checkpoint_bool,
                              d_bool, t_bool, g_bool, branch)
             run_sim = run_sim_async(request, name, numNodes, name_sim, execTime, qos, checkpoint_bool,
-                                    auto_restart_bool, eID, branch, g_bool, t_bool, d_bool)
+                                    auto_restart_bool, eID, branch, g_bool, t_bool, d_bool, project_name) #run the job in an asyncronus way
             run_sim.start()
             return redirect('accounts:executions')
 
@@ -787,11 +786,8 @@ def delete_parent_folder(path, ssh):
 
 
 def deleteExecution(eIDdelete, request):
-    log.info(f"eIDdelete {eIDdelete}")
     try:
-        log.info(f"ssh 1 {request.session['machine_chosen']}")
         ssh = connection(request.session['content'], request.session['machine_chosen'])
-        log.info(f"ssh 2 ssh: {ssh}")
         exec = Execution.objects.filter(eID=eIDdelete).get()
         delete_parent_folder(exec.wdir, ssh)
         if exec.eID != 0:
@@ -1232,7 +1228,7 @@ def update_table(request):
                 "sacct -j " + str(executionE.jobID) + " --format=jobId,user,nnodes,elapsed,state | sed -n 3,3p")
             stdout = stdout.readlines()
             values = str(stdout).split()
-
+            Execution.objects.filter(jobID=executionE.jobID).update(time=values[3])
             if str(values[4]) == "COMPLETED" and executionE.status != "COMPLETED":
                 Execution.objects.filter(jobID=executionE.jobID).update(status=values[4], time=values[3],
                                                                         nodes=int(values[2]))
@@ -1253,18 +1249,17 @@ def connection(content, machineID):
         machine_found = Machine.objects.get(id=machineID)
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh.connect(machine_found.fqdn, username=machine_found.user, pkey=pkey)
-        log.info(f"CONNECTION DONE {machine_found.user}@{machine_found.fqdn}")
         return ssh
     except paramiko.AuthenticationException as auth_error:
-        log.info(f"Authentication error: {auth_error}")
+        log.error(f"Authentication error: {auth_error}")
     except paramiko.BadHostKeyException as host_key_error:
-        log.info(f"Bad host key error: {host_key_error}")
+        log.error(f"Bad host key error: {host_key_error}")
     except paramiko.SSHException as ssh_error:
-        log.info(f"SSH error: {ssh_error}")
+        log.error(f"SSH error: {ssh_error}")
     except Machine.DoesNotExist as not_found_error:
-        log.info(f"Machine not found error: {not_found_error}")
+        log.error(f"Machine not found error: {not_found_error}")
     except Exception as e:
-        log.info(f"An unexpected error occurred: {e}")
+        log.error(f"An unexpected error occurred: {e}")
         return redirect('accounts:executions')
 
 
@@ -1695,9 +1690,7 @@ def remove_numbers(input_str):
     if len(parts) >= 2:
         # Take the first part as the hostname
         hostname = parts[0]
-        log.info(f"param machine : {input_str}")
         if input_str.startswith("glogin"):
-            log.info(f"param machine result : mn5")
             return "mn5"
         # Remove any trailing digits from the hostname
         while hostname and hostname[-1].isdigit():

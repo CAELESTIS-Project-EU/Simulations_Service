@@ -77,7 +77,7 @@ def run_simulation(request):
             g_flag = request.data.get("gSwitch", False)
             d_flag = request.data.get("dSwitch", False)
             t_flag = request.data.get("tSwitch", False)
-
+            project_name = request.POST.get('project_name')
             checkpoint_bool = False
             if checkpoint_flag == "on":
                 checkpoint_bool = True
@@ -96,7 +96,7 @@ def run_simulation(request):
             eID = start_exec(numNodes, name_sim, execTime, qos, name, request, auto_restart_bool, checkpoint_bool,
                              d_bool, t_bool, g_bool, branch)
             run_simulation = run_sim_async(request, name, numNodes, name_sim, execTime, qos, checkpoint_bool,
-                                    auto_restart_bool, eID, branch, g_bool, t_bool, d_bool)
+                                    auto_restart_bool, eID, branch, g_bool, t_bool, d_bool, project_name)
             run_simulation.start()
             return Response({'message': 'Simulation started successfully! ', 'execution_id': eID},
                             status=status.HTTP_202_ACCEPTED)

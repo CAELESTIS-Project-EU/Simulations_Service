@@ -1,7 +1,7 @@
 import xml_to_yaml
 
 def tryCode():
-    path="/home/rcecco/BSCprojects/templates_yaml/AML/w4.xml"
+    path="/home/rcecco/BSCprojects/Workflows/examples/yamls/AUTOMATION_ML/ww.xml"
     save_document(xml_to_yaml.execution(path), "/home/rcecco/BSCprojects/templates_yaml/AML/w4.yaml")
 
 def save_document(text, file_path):

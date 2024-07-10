@@ -44,6 +44,25 @@
                                    placeholder="Enter the queue you want to use">
                             <small class="form-text text-muted">QOS (default bsc_cs)</small>
                             <br>
+                            <label class="font-weight-bold">Project Name</label>
+                            <input type="text" name="project_name" class="form-control"
+                                   placeholder="Enter the project_name you want to use">
+                            <small class="form-text text-muted">Project Name</small>
+                            <br>
+                            <script>
+                                document.addEventListener("DOMContentLoaded", function() {
+                                    const machineChosen = "{{ machine_chosen }}";
+                                    const autoRestartCheckbox = document.getElementById('autoRestartCheckbox');
+                                    const checkpointFlagCheckbox = document.getElementById('checkpointFlagCheckbox');
+
+                                    autoRestartCheckbox.addEventListener('change', function () {
+                                        checkpointFlagCheckbox.checked = this.checked;
+                                        checkpointFlagCheckbox.disabled = this.checked;
+                                    });
+
+
+                                });
+                            </script>
                             <label class="font-weight-bold">Checkpointing</label>
                             <br>
                             <label class="switch">
@@ -76,15 +95,6 @@
                             <label class="form-label" for="customFile">Input file</label>
                             {% render_field form.document type="file" class="form-control" id="customFile" placeholder="Upload your workflow definition" %}
                             <small class="form-text text-muted">Upload your workflow's definition</small>
-                            <script>
-                                const autoRestartCheckbox = document.getElementById('autoRestartCheckbox');
-                                const checkpointFlagCheckbox = document.getElementById('checkpointFlagCheckbox');
-
-                                autoRestartCheckbox.addEventListener('change', function () {
-                                    checkpointFlagCheckbox.checked = this.checked;
-                                    checkpointFlagCheckbox.disabled = this.checked;
-                                });
-                            </script>
                         </div>
                         <br>
                         <button type="submit" class="btn btn-primary fa fa-play-circle" onclick="this.disabled=true,this.form.submit();"></button>
