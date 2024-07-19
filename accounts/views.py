@@ -28,9 +28,11 @@ import shlex
 
 log = logging.getLogger(__name__)
 
+
 # Encrypt a message using a key
 def encrypt(message: bytes, key: bytes) -> bytes:
     return Fernet(key).encrypt(message)
+
 
 # Decrypt a token using a key
 def decrypt(token: bytes, key: bytes) -> bytes:
@@ -41,6 +43,7 @@ def decrypt(token: bytes, key: bytes) -> bytes:
         raise
     return res
 
+
 # Get the client's IP address from the request
 def get_client_ip(request):
     x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
@@ -49,7 +52,6 @@ def get_client_ip(request):
     else:
         ip = request.META.get('REMOTE_ADDR')
     return ip
-
 
 
 # Validate reCAPTCHA response
@@ -203,7 +205,8 @@ def scp_upload_code_folder(local_path, remote_path, content, machineID, branch):
     sftp.close()
     return
 
-#cjheck if the path is a file or a folder
+
+# cjheck if the path is a file or a folder
 def is_file_or_folder(path):
     if '.' in os.path.basename(path) and not path.endswith('.'):
         return False
@@ -532,7 +535,8 @@ def write_checkpoint_file(execution_folder, cmd2):
     cmd = f'echo "{cmd2}" > {script_path} && chmod +x {script_path}'
     return cmd
 
-#class to run jobs in an asyncronus way
+
+# class to run jobs in an asyncronus way
 class run_sim_async(threading.Thread):
     def __init__(self, request, name, numNodes, name_sim, execTime, qos, checkpoint_bool, auto_restart_bool, eID,
                  branch, gOPTION, tOPTION, dOPTION, project_name):
@@ -550,33 +554,31 @@ class run_sim_async(threading.Thread):
         self.gOPTION = gOPTION
         self.tOPTION = tOPTION
         self.dOPTION = dOPTION
-        self.project_name= project_name
+        self.project_name = project_name
 
     def run(self):
         extension = get_file_extension((self.name))
-        if extension == ".yaml":    #for most of the workflow we use yaml files
+        if extension == ".yaml":  # for most of the workflow we use yaml files
             workflow = read_and_write_yaml(self.name)
-        elif extension == ".aml" or extension == ".xml":  #for the AUTOMATION ML workflow
-            log.info("ENTER HERE AML or XML")
+        elif extension == ".aml" or extension == ".xml":  # for the AUTOMATION ML workflow
             workflow = xml_to_yaml.execution("documents/" + self.name)
-            log.info(f"workflow: {workflow}")
         machine_found = Machine.objects.get(id=self.request.session['machine_chosen'])
         fqdn = machine_found.fqdn
         machine_folder = extract_substring(fqdn)
         userMachine = machine_found.user
         workflow_name = workflow.get("workflow_type")
-        principal_folder = machine_found.wdir #folder specified as workind dir in the online service
+        principal_folder = machine_found.wdir  # folder specified as workind dir in the online service
         wdirPath, nameWdir = wdir_folder(principal_folder)
-        #command to create all the folders and copy the yaml file passed through the service
+        # command to create all the folders and copy the yaml file passed through the service
         cmd1 = "source /etc/profile;  mkdir -p " + principal_folder + "/" + nameWdir + "/workflows/; echo " + shlex.quote(
             str(workflow)) + " > " + principal_folder + "/" + nameWdir + "/workflows/" + str(
             self.name) + "; cd " + principal_folder + "; BACKUPDIR=$(ls -td ./*/ | head -1); echo EXECUTION_FOLDER:$BACKUPDIR;"
         log.info(f"cmd1 : {cmd1}")
         ssh = connection(self.request.session["content"], machine_found.id)
-
         stdin, stdout, stderr = ssh.exec_command(cmd1)
         execution_folder = wdirPath + "/execution"
         workflow_folder = wdirPath + "/workflows"
+
 
         alya_output_server = None
         Execution.objects.filter(eID=self.eiD).update(wdir=execution_folder, workflow_path=workflow_folder,
@@ -603,15 +605,15 @@ class run_sim_async(threading.Thread):
         if self.checkpoint_bool:
             cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; " + get_variables_exported(
                 exported_variables) + " mkdir -p " + execution_folder + "; cd " + path_install_dir + "/scripts/" + param_machine + "/;  source app-checkpoint.sh " + userMachine + " " + str(
-                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir + " " + self.branch + " " + machine_found.dataDir + " " + self.gOPTION + " " + self.tOPTION + " " + self.dOPTION + " " + self.project_name+  ";"
+                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir + " " + self.branch + " " + machine_found.dataDir + " " + self.gOPTION + " " + self.tOPTION + " " + self.dOPTION + " " + self.project_name + ";"
             cmd_writeFile_checkpoint = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; " + get_variables_exported(
                 exported_variables) + " cd " + path_install_dir + "/scripts/" + param_machine + "/;  source app-checkpoint.sh " + userMachine + " " + str(
-                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir + " " + self.branch + " " + machine_found.dataDir + " " + self.gOPTION + " " + self.tOPTION + " " + self.dOPTION + " " + self.project_name+ ";"
+                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir + " " + self.branch + " " + machine_found.dataDir + " " + self.gOPTION + " " + self.tOPTION + " " + self.dOPTION + " " + self.project_name + ";"
             cmd2 += write_checkpoint_file(execution_folder, cmd_writeFile_checkpoint)
         else:
             cmd2 = "source /etc/profile;  source " + path_install_dir + "/scripts/load.sh " + path_install_dir + " " + param_machine + "; " + get_variables_exported(
                 exported_variables) + "  mkdir -p " + execution_folder + "; cd " + path_install_dir + "/scripts/" + param_machine + "/; source app.sh " + userMachine + " " + str(
-                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir + " " + self.branch + " " + machine_found.dataDir + " " + self.gOPTION + " " + self.tOPTION + " " + self.dOPTION + " " + self.project_name+  ";"
+                self.name) + " " + workflow_folder + " " + execution_folder + " " + self.numNodes + " " + self.execTime + " " + self.qos + " " + machine_found.installDir + " " + self.branch + " " + machine_found.dataDir + " " + self.gOPTION + " " + self.tOPTION + " " + self.dOPTION + " " + self.project_name + ";"
         log.info(f"run_sim : {cmd2} ")
         stdin, stdout, stderr = ssh.exec_command(cmd2)
         stdout = stdout.readlines()
@@ -624,7 +626,7 @@ class run_sim_async(threading.Thread):
             for line in stdout:
                 if (s in line):
                     jobID = int(line.replace(s, ""))
-                    Execution.objects.filter(eID=self.eiD).update(jobID=jobID, status="PENDING")
+                    Execution.objects.filter(eID=self.eiD).update(jobID=jobID, status="PENDING", project_name=self.project_name)
                     self.request.session['jobID'] = jobID
         self.request.session['execution_folder'] = execution_folder
         os.remove("documents/" + str(self.name))
@@ -689,20 +691,21 @@ def run_sim(request):
                 auto_restart_bool = True
             if auto_restart_bool:
                 checkpoint_bool = True
-            g_bool = "false"  #graph option
+            g_bool = "false"  # graph option
             if g_flag == "on":
                 g_bool = "true"
-            t_bool = "false" #trace option
+            t_bool = "false"  # trace option
             if t_flag == "on":
                 t_bool = "true"
-            d_bool = "false" #debug option
+            d_bool = "false"  # debug option
             if d_flag == "on":
                 d_bool = "true"
             project_name = request.POST.get('project_name')
             eID = start_exec(numNodes, name_sim, execTime, qos, name, request, auto_restart_bool, checkpoint_bool,
-                             d_bool, t_bool, g_bool, branch)
+                             d_bool, t_bool, g_bool, branch, project_name)
             run_sim = run_sim_async(request, name, numNodes, name_sim, execTime, qos, checkpoint_bool,
-                                    auto_restart_bool, eID, branch, g_bool, t_bool, d_bool, project_name) #run the job in an asyncronus way
+                                    auto_restart_bool, eID, branch, g_bool, t_bool, d_bool,
+                                    project_name)  # run the job in an asyncronus way
             run_sim.start()
             return redirect('accounts:executions')
 
@@ -734,7 +737,7 @@ def set_environment_variables(workflow):
 
 
 def start_exec(numNodes, name_sim, execTime, qos, name, request, auto_restart_bool, checkpoint_bool, d_bool, t_bool,
-               g_bool, branch):
+               g_bool, branch, project_name):
     machine_found = Machine.objects.get(id=request.session['machine_chosen'])
     userMachine = machine_found.user
     principal_folder = machine_found.wdir
@@ -761,6 +764,7 @@ def start_exec(numNodes, name_sim, execTime, qos, name, request, auto_restart_bo
     form.t_bool = t_bool
     form.g_bool = g_bool
     form.branch = branch
+    form.project_name = ""
     form.results_ftp_path = ""
     form.save()
     return uID
@@ -816,6 +820,8 @@ def deleteExecution(eIDdelete, request):
         return render(request, 'accounts/executions.html',
                       {'form': form, 'executions': executions, 'executionsDone': executionsDone,
                        'executionsFailed': executionsFailed, 'executionsTimeout': executionTimeout})
+
+
 def deleteExecutionHTTP(eIDdelete, request):
     ssh = connection(request.session['content'], request.session['machine_chosen'])
     try:
@@ -1167,21 +1173,23 @@ class updateExecutions(threading.Thread):
         render_right(self.request)
         return
 
-dict_thread={}
+
+dict_thread = {}
+
 
 class auto_restart_thread(threading.Thread):
-    def __init__(self, user,content, conn_id):
+    def __init__(self, user, content, conn_id):
         threading.Thread.__init__(self)
         super().__init__()
         self.user = user
-        self.content=content
-        self.conn_id=conn_id
+        self.content = content
+        self.conn_id = conn_id
         self._stop_event = threading.Event()
 
     def run(self):
         global dict_thread
         if self.user not in dict_thread:
-            dict_thread[self.user]=self
+            dict_thread[self.user] = self
             wait_timeout_new(self.user, self.content, self.conn_id, self._stop_event)
         return
 
@@ -1189,7 +1197,7 @@ class auto_restart_thread(threading.Thread):
         self._stop_event.set()  # Set the event to stop the thread
 
 
-def wait_timeout_new(user, content, conn_id,  stop_event):
+def wait_timeout_new(user, content, conn_id, stop_event):
     global dict_thread
     while not stop_event.is_set():
         executions = Execution.objects.all().filter(author=user, autorestart=True).filter(
@@ -1211,7 +1219,7 @@ def wait_timeout_new(user, content, conn_id,  stop_event):
 
 
 def monitor_checkpoint(user, content, conn_id):
-    auto_restart_obj = auto_restart_thread(user ,content, conn_id)
+    auto_restart_obj = auto_restart_thread(user, content, conn_id)
     auto_restart_obj.start()
     return
 
@@ -1376,6 +1384,7 @@ def checkpointing_noAutorestart(jobIDCheckpoint, request):
                 form.t_bool = checkpointID.t_bool
                 form.g_bool = checkpointID.g_bool
                 form.branch = checkpointID.branch
+                form.project_name = checkpointID.project_name
                 form.save()
     checkpointID = Execution.objects.all().get(author=request.user, jobID=jobIDCheckpoint)
     checkpointID.status = "CONTINUE"
@@ -1680,7 +1689,6 @@ def home(request):
 
 def dashboard(request):
     return render(request, 'accounts/dashboard.html')
-
 
 
 def remove_numbers(input_str):

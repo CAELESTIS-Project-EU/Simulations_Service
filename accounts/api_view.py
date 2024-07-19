@@ -59,7 +59,7 @@ def run_simulation(request):
         file_extension = os.path.splitext(name)[1]
         if file_extension != ".yaml" and  file_extension !=".xml" and file_extension!=".aml":
             return Response(
-                {'message': 'This workflow is under development, it is still not supported!', 'execution_id': 0},
+                {'message': 'This workflow is still not supported!', 'execution_id': 0},
                 status=status.HTTP_202_ACCEPTED)
         else:
             document = form.save(commit=False)
@@ -71,13 +71,14 @@ def run_simulation(request):
             name_sim = request.data.get('name_sim') or get_random_string(8)
             qos = request.data.get('qos')
             execTime = request.data.get('execTime')
+            project_name = request.data.get('project_name')
             checkpoint_flag = request.data.get("checkpoint_flag", False)
             auto_restart = request.data.get("auto_restart", False)
 
             g_flag = request.data.get("gSwitch", False)
             d_flag = request.data.get("dSwitch", False)
             t_flag = request.data.get("tSwitch", False)
-            project_name = request.POST.get('project_name')
+
             checkpoint_bool = False
             if checkpoint_flag == "on":
                 checkpoint_bool = True
@@ -94,7 +95,7 @@ def run_simulation(request):
             if d_flag == "on":
                 d_bool = "true"
             eID = start_exec(numNodes, name_sim, execTime, qos, name, request, auto_restart_bool, checkpoint_bool,
-                             d_bool, t_bool, g_bool, branch)
+                             d_bool, t_bool, g_bool, branch, project_name)
             run_simulation = run_sim_async(request, name, numNodes, name_sim, execTime, qos, checkpoint_bool,
                                     auto_restart_bool, eID, branch, g_bool, t_bool, d_bool, project_name)
             run_simulation.start()

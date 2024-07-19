@@ -169,24 +169,11 @@ def workflow_parser(xml_file):
     root = root.find('.//{http://www.dke.de/CAEX}InternalElement[@Name="Workflow_definition"]')
 
     workflow_data = {'workflow_type': None, 'phases': [], 'outputs': {}, 'inputs': {}, 'parameters': {}}
-    log.info(f"1 workflow_data: {workflow_data}")
-    print(f"1 workflow_data: {workflow_data}")
     workflow_data['workflow_type'] = workflow_type_parser(root)
-    log.info(f"2 workflow_type: {workflow_data['workflow_type']}")
-    print(f"2 workflow_type: {workflow_data['workflow_type']}")
     workflow_data['inputs'] = inputs_parser(root)
-    log.info(f"3 inputs: {workflow_data['inputs']}")
-    print(f"3 inputs: {workflow_data['inputs']}")
     workflow_data['outputs'] = outputs_parser(root)
-    log.info(f"4 outputs: {workflow_data['outputs']}")
-    print(f"4 outputs: {workflow_data['outputs']}")
     workflow_data['phases'] = phases_parser(root)
-    log.info(f"5 phases: {workflow_data['phases']}")
-    print(f"5 phases: {workflow_data['phases']}")
     workflow_data['parameters'] = parameters_parser(root)
-    log.info(f"6 parameters: {workflow_data['parameters']}")
-    print(f"6 parameters: {workflow_data['parameters']}")
-    log.info(workflow_data)
     return workflow_data
 
 
@@ -198,6 +185,3 @@ def execution(path):
         print(f"Error: {e}")
 
 
-
-if __name__ == "__main__":
-    execution("/home/rcecco/BSCprojects/Workflows/examples/yamls/AUTOMATION_ML/final.xml")

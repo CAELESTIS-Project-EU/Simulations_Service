@@ -29,7 +29,7 @@ class WorkFlowForm(forms.ModelForm):
 class ExecutionForm(forms.ModelForm):
     class Meta:
         model = Execution
-        fields = ('name_sim', 'jobID', 'user', 'nodes', 'status', 'time', 'wdir', 'workflow_path')
+        fields = ('name_sim', 'jobID', 'user', 'nodes', 'status', 'time', 'wdir', 'workflow_path', 'project_name')
 
 
 class Key_Gen_Form(forms.ModelForm):
